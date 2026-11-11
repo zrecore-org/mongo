@@ -1,0 +1,26 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer In { uvec2 x[]; };
+#include "rsel_common.glsl"
+shared uint sh[R * 256];
+void main() {
+    uint t = gl_LocalInvocationID.x;
+    for (uint j = t; j < R * 256u; j += 256u) sh[j] = 0u;
+    barrier();
+    uint shiftPrefix = 64u - 8u * pc.pass;   // 64 when pass == 0: every element matches
+    for (uint i = gl_GlobalInvocationID.x; i < pc.n; i += pc.stride) {
+        uvec2 k = orderedKey(x[i]);
+        uint digit = shr64(k, 56u - 8u * pc.pass).x & 255u;
+        for (uint r = 0u; r < R; r++) {
+            bool match = true;
+            if (pc.pass > 0u) {
+                uvec2 pre = shr64(k, shiftPrefix);
+                match = pre.x == st[3u * r + 1u] && pre.y == st[3u * r];
+            }
+            if (match) atomicAdd(sh[r * 256u + digit], 1u);
+        }
+    }
+    barrier();
+    for (uint j = t; j < R * 256u; j += 256u) if (sh[j] != 0u) atomicAdd(hist[j], sh[j]);
+}

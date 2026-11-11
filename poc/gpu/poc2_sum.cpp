@@ -61,8 +61,10 @@ struct Gpu {
     bool init(size_t maxN, uint32_t G, uint32_t wgSize) {
         if (!ctx.init(gpu::defaultLoaderPaths())) return false;
         wg = wgSize; curG = G;
-        kSplitCpu = ctx.makeKernel("build/shaders/sum_cpusplit.spv", 4, 8, {wg, G});
-        kSplitGpu = ctx.makeKernel("build/shaders/sum_gpusplit.spv", 4, 8, {wg, G});
+        const char* sfx = getenv("POC_SHADER_SUFFIX");  // "_plain" = built without `precise`
+        std::string x = sfx ? sfx : "";
+        kSplitCpu = ctx.makeKernel("build/shaders/sum_cpusplit" + x + ".spv", 4, 8, {wg, G});
+        kSplitGpu = ctx.makeKernel("build/shaders/sum_gpusplit" + x + ".spv", 4, 8, {wg, G});
         in = ctx.alloc(maxN * 8);
         gid = ctx.alloc(maxN * 4);
         part = ctx.alloc((size_t)kMaxWgs * G * 8);
@@ -143,6 +145,7 @@ static int bench(uint32_t G) {
     auto data = makeData(maxN, rng);
     std::vector<uint32_t> gids(maxN);
     for (auto& x : gids) x = (uint32_t)(rng() % G);
+    if (getenv("POC_SHADER_SUFFIX")) printf("shader suffix=%s MVK_CONFIG_FAST_MATH_ENABLED=%s\n", getenv("POC_SHADER_SUFFIX"), getenv("MVK_CONFIG_FAST_MATH_ENABLED") ? getenv("MVK_CONFIG_FAST_MATH_ENABLED") : "(default)");
     std::string csv = "G,n,cpu_dd_ms,cpu_naive_ms,gpu_cpusplit_total_ms,cs_prep,cs_gpu,cs_combine,gpu_gpusplit_total_ms,gs_prep,gs_gpu,gs_combine\n";
     printf("%-3s %10s | %9s %9s | %9s (prep/gpu/comb) | %9s (prep/gpu/comb) | speedup vs dd: cpusplit gpusplit\n",
            "G", "n", "cpu_dd", "cpu_naive", "cpusplit", "gpusplit");
@@ -169,7 +172,7 @@ static int bench(uint32_t G) {
                  median(gcs), median(ccs), gs, median(pgs), median(ggs), median(cgs));
         csv += line;
     }
-    FILE* f = fopen(("out/poc2_bench_G" + std::to_string(G) + ".csv").c_str(), "w"); fputs(csv.c_str(), f); fclose(f);
+    FILE* f = fopen(("out/poc2_bench_G" + std::to_string(G) + (getenv("POC_SHADER_SUFFIX") ? "_plain_fm0" : "") + ".csv").c_str(), "w"); fputs(csv.c_str(), f); fclose(f);
     gp.shutdown();
     return 0;
 }

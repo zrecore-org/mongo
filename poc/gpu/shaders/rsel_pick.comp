@@ -1,0 +1,20 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer In { uvec2 x[]; };  // unused here, keeps one descriptor layout
+#include "rsel_common.glsl"
+void main() {
+    uint r = gl_LocalInvocationID.x;
+    if (r >= R) return;
+    uint rank = st[3u * r + 2u], digit = 0u, cum = 0u;
+    for (uint d = 0u; d < 256u; d++) {
+        uint c = hist[r * 256u + d];
+        if (cum + c > rank) { digit = d; break; }
+        cum += c;
+    }
+    uint hi = st[3u * r], lo = st[3u * r + 1u];
+    st[3u * r]      = (hi << 8) | (lo >> 24);
+    st[3u * r + 1u] = (lo << 8) | digit;
+    st[3u * r + 2u] = rank - cum;
+    for (uint d = 0u; d < 256u; d++) hist[r * 256u + d] = 0u;   // ready for the next pass
+}
