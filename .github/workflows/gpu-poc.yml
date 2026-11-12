@@ -270,6 +270,21 @@ jobs:
         timeout-minutes: 10
         run: ./run.sh poc11_prewarm
 
+      # An operator-level alternative to a software heartbeat: lock the GPU clocks so an idle GPU does not drop them.
+      # Needs root and a GPU that allows it; informational. The clocks are reset afterwards.
+      - name: "POC 11, with locked GPU clocks (nvidia-smi -lgc)"
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          nvidia-smi --query-supported-clocks=gr --format=csv,noheader | head -3
+          sudo nvidia-smi -lgc 1590,1590 || { echo "::warning title=locking the GPU clocks::not permitted on this runner"; exit 1; }
+          POC11_IDLE_ONLY=1 ./run.sh poc11_prewarm
+      - name: Reset the GPU clocks
+        if: always()
+        continue-on-error: true
+        run: sudo nvidia-smi -rgc || true
+
       - name: "POC 2, $sum timing (G=1 and G=16) and accuracy"
         working-directory: poc/gpu
         continue-on-error: true

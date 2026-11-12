@@ -44,7 +44,8 @@ int main() {
 
     printf("\nidle gap before one query (2 runs each; each run starts with 2 s of sustained load to reach full clocks)\n");
     printf("%-10s %8s | %-22s | %s\n", "condition", "gap s", "query ms (run1, run2)", "clock MHz, power W just before the query");
-    for (int hb = 0; hb < 2; hb++)
+    const bool idleOnly = getenv("POC11_IDLE_ONLY") != nullptr;   // e.g. when the clocks have been locked by the operator
+    for (int hb = 0; hb < (idleOnly ? 1 : 2); hb++)
         for (double gap : {0.0, 0.5, 2.0, 5.0, 12.0}) {
             double q[2]; std::string state[2];
             for (int r = 0; r < 2; r++) {
