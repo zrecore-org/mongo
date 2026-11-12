@@ -26,11 +26,11 @@ struct GpuSort {
     std::vector<uint32_t> sort(const uint64_t* keys, size_t n, uint32_t bits, double t[3]) {
         double t0 = gpu::nowMs();
         memcpy(keyA.ptr, keys, n * 8);
-        uint32_t* ia = (uint32_t*)idxA.ptr; for (size_t i = 0; i < n; i++) ia[i] = (uint32_t)i;
         double t1 = gpu::nowMs();
         uint32_t B = (n + 4095) / 4096, passes = bits / 4;
         gpu::Buf *ki = &keyA, *ii = &idxA, *ko = &keyB, *io = &idxB;
         ctx.begin();
+        ctx.upload(keyA, n * 8);
         for (uint32_t p = 0; p < passes; p++) {
             uint32_t pc[3] = {(uint32_t)n, B, p};
             ctx.dispatch(kc, {ki, &bh}, pc, B);
@@ -38,6 +38,7 @@ struct GpuSort {
             ctx.dispatch(kt, {ki, ii, ko, io, &bh}, pc, B);
             std::swap(ki, ko); std::swap(ii, io);
         }
+        ctx.download(*ii, n * 4);
         ctx.submitWait();
         double t2 = gpu::nowMs();
         std::vector<uint32_t> out((uint32_t*)ii->ptr, (uint32_t*)ii->ptr + n);
@@ -52,7 +53,7 @@ int main() {
     const size_t maxN = quick ? 2u << 20 : 16u << 20;
     GpuSort g;
     if (!g.init(maxN)) { printf("no GPU: %s\n", g.ctx.error.c_str()); return 2; }
-    printf("device=%s pipeline create: count %.1f, scan %.1f, scatter %.1f ms\n", g.ctx.props.deviceName, g.kc.createMs, g.ks.createMs, g.kt.createMs);
+    printf("device=%s memory=%s pipeline create: count %.1f, scan %.1f, scatter %.1f ms\n", g.ctx.props.deviceName, g.ctx.memMode(), g.kc.createMs, g.ks.createMs, g.kt.createMs);
     std::mt19937_64 rng(11);
     std::vector<uint64_t> data(maxN);
     for (auto& x : data) x = rng();

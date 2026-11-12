@@ -99,7 +99,11 @@ struct Gpu {
         uint32_t wgs = wgsOverride ? wgsOverride : std::clamp<uint32_t>((n + wg * 16 - 1) / (wg * 16), 1, kMaxWgs);
         uint32_t pc[2] = {(uint32_t)n, wgs * wg};
         ctx.begin();
+        ctx.upload(in, n * 8);
+        if (curG > 1) ctx.upload(gid, n * 4);
         ctx.dispatch(gpuSplit ? kSplitGpu : kSplitCpu, {&in, &gid, &part, &flag}, pc, wgs);
+        ctx.download(part, (size_t)wgs * curG * 8);
+        ctx.download(flag, (size_t)wgs * 4);
         ctx.submitWait();
         double t2 = gpu::nowMs();
         // Combine per-workgroup partials with DoubleDoubleSummation semantics on the host.
@@ -139,7 +143,7 @@ static int bench(uint32_t G) {
     const size_t maxN = 32u << 20;
     Gpu gp;
     if (!gp.init(maxN, G, 256)) { printf("no GPU: %s\n", gp.ctx.error.c_str()); return 2; }
-    printf("device=%s G=%u pipeline create: cpusplit %.1f ms, gpusplit %.1f ms\n", gp.ctx.props.deviceName, G,
+    printf("device=%s memory=%s G=%u pipeline create: cpusplit %.1f ms, gpusplit %.1f ms\n", gp.ctx.props.deviceName, gp.ctx.memMode(), G,
            gp.kSplitCpu.createMs, gp.kSplitGpu.createMs);
     std::mt19937_64 rng(7);
     auto data = makeData(maxN, rng);

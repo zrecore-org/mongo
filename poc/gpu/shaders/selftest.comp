@@ -1,0 +1,18 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Startup known-answer probes (POC 8). op 0: fma on two floats, op 1: twoProd (fma or Dekker, per NOFMA),
+// op 2: GPU-side double -> df64 split. The host compares each against an exact CPU result.
+#include "df64_ops.glsl"
+#include "split_double.glsl"
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer In { uvec2 x[]; };
+layout(std430, binding = 1) writeonly buffer Out { vec2 r[]; };
+layout(push_constant) uniform P { uint n; uint op; } pc;
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.n) return;
+    float a = uintBitsToFloat(x[i].x), b = uintBitsToFloat(x[i].y);
+    if (pc.op == 0u) { precise float p = a * b; r[i] = vec2(p, fma(a, b, -p)); }
+    else if (pc.op == 1u) r[i] = twoProd(a, b);
+    else { uint bad = 0u; r[i] = splitDouble(x[i], bad); }
+}

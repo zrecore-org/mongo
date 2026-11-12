@@ -31,11 +31,17 @@ inline double nowMs() {
             throw std::runtime_error(std::string(#x) + " failed: " + std::to_string(r_));    \
     } while (0)
 
+// A buffer. On unified-memory devices (Apple, integrated GPUs) there is one host-visible buffer. On a discrete
+// GPU `buf`/`ptr` is a host-visible staging buffer and `dbuf` is its device-local twin; shaders bind the twin
+// and Ctx::upload/download record the PCIe copies, so transfer cost is inside the timed submission.
 struct Buf {
     VkBuffer buf{};
     VkDeviceMemory mem{};
     void* ptr{};
     size_t size{};
+    VkBuffer dbuf{};
+    VkDeviceMemory dmem{};
+    VkBuffer bound() const { return dbuf ? dbuf : buf; }
 };
 
 struct Kernel {
@@ -62,7 +68,11 @@ struct Ctx {
     VkPhysicalDeviceFeatures feats{};
     uint32_t memType{};
     bool unifiedMemory{false};
+    uint32_t devMemType{};
+    bool haveDevMem{false};
     std::string error;
+
+    const char* memMode() const { return unifiedMemory ? "unified" : haveDevMem ? "discrete (device-local + staging copies)" : "host-visible only"; }
 
     // Returns false (and sets `error`) when no usable Vulkan device exists.
     bool init(const std::vector<std::string>& loaderPaths) {
@@ -197,6 +207,14 @@ struct Ctx {
                 }
             if (!ok)
                 throw std::runtime_error("no host-visible coherent memory");
+            // Discrete GPU: also find device-local memory that the host cannot map.
+            if (!unifiedMemory && !getenv("GPU_POC_FORCE_HOST_MEMORY"))
+                for (uint32_t i = 0; i < mp.memoryTypeCount && !haveDevMem; i++)
+                    if ((mp.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) ==
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+                        devMemType = i;
+                        haveDevMem = true;
+                    }
             return true;
         } catch (const std::exception& e) {
             error = e.what();
@@ -209,7 +227,7 @@ struct Ctx {
         b.size = bytes;
         VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         bi.size = bytes;
-        bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         VK_CHECK(vkCreateBuffer(dev, &bi, nullptr, &b.buf));
         VkMemoryRequirements mr;
@@ -220,7 +238,42 @@ struct Ctx {
         VK_CHECK(vkAllocateMemory(dev, &mai, nullptr, &b.mem));
         VK_CHECK(vkBindBufferMemory(dev, b.buf, b.mem, 0));
         VK_CHECK(vkMapMemory(dev, b.mem, 0, VK_WHOLE_SIZE, 0, &b.ptr));
+        if (haveDevMem) {
+            VK_CHECK(vkCreateBuffer(dev, &bi, nullptr, &b.dbuf));
+            VkMemoryRequirements dr;
+            vkGetBufferMemoryRequirements(dev, b.dbuf, &dr);
+            VkMemoryAllocateInfo dai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            dai.allocationSize = dr.size;
+            dai.memoryTypeIndex = devMemType;
+            VK_CHECK(vkAllocateMemory(dev, &dai, nullptr, &b.dmem));
+            VK_CHECK(vkBindBufferMemory(dev, b.dbuf, b.dmem, 0));
+        }
         return b;
+    }
+
+    // Record host -> device copy of the first `bytes` (0 = all) of a staging buffer. No-op on unified memory.
+    void upload(Buf& b, size_t bytes = 0) {
+        if (!b.dbuf) return;
+        VkBufferCopy r{0, 0, bytes ? bytes : b.size};
+        vkCmdCopyBuffer(cmd, b.buf, b.dbuf, 1, &r);
+        VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+    }
+    // Record device -> host copy of the first `bytes` (0 = all) into the staging buffer. No-op on unified memory.
+    void download(Buf& b, size_t bytes = 0) {
+        if (!b.dbuf) return;
+        VkMemoryBarrier m1{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        m1.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        m1.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &m1, 0, nullptr, 0, nullptr);
+        VkBufferCopy r{0, 0, bytes ? bytes : b.size};
+        vkCmdCopyBuffer(cmd, b.dbuf, b.buf, 1, &r);
+        VkMemoryBarrier m2{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        m2.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        m2.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &m2, 0, nullptr, 0, nullptr);
     }
 
     void release(Buf& b) {
@@ -229,6 +282,7 @@ struct Ctx {
         vkUnmapMemory(dev, b.mem);
         vkDestroyBuffer(dev, b.buf, nullptr);
         vkFreeMemory(dev, b.mem, nullptr);
+        if (b.dbuf) { vkDestroyBuffer(dev, b.dbuf, nullptr); vkFreeMemory(dev, b.dmem, nullptr); }
         b = Buf{};
     }
 
@@ -321,7 +375,7 @@ struct Ctx {
         std::vector<VkDescriptorBufferInfo> bi(bufs.size());
         std::vector<VkWriteDescriptorSet> ws(bufs.size());
         for (size_t i = 0; i < bufs.size(); i++) {
-            bi[i] = {bufs[i]->buf, 0, VK_WHOLE_SIZE};
+            bi[i] = {bufs[i]->bound(), 0, VK_WHOLE_SIZE};
             ws[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                      nullptr,
                      ds,

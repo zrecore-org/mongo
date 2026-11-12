@@ -17,11 +17,27 @@ PREC vec2 quickTwoSum(float a, float b) {  // requires |a| >= |b|
     PREC float e = b - (s - a);
     return vec2(s, e);
 }
+#ifdef NOFMA
+// Dekker/Veltkamp product without fma, for drivers whose fma is not fused (see RESULTS.md, lavapipe).
+PREC vec2 split12(float a) {
+    PREC float c = 4097.0 * a;
+    PREC float hi = c - (c - a);
+    return vec2(hi, a - hi);
+}
+PREC vec2 twoProd(float a, float b) {
+    PREC float p = a * b;
+    PREC vec2 sa = split12(a);
+    PREC vec2 sb = split12(b);
+    PREC float e = ((sa.x * sb.x - p) + sa.x * sb.y + sa.y * sb.x) + sa.y * sb.y;
+    return vec2(p, e);
+}
+#else
 PREC vec2 twoProd(float a, float b) {
     PREC float p = a * b;
     PREC float e = fma(a, b, -p);
     return vec2(p, e);
 }
+#endif
 PREC vec2 dfAdd(vec2 a, vec2 b) {  // accurate (IEEE-style) addition
     PREC vec2 s = twoSum(a.x, b.x);
     PREC vec2 t = twoSum(a.y, b.y);

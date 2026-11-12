@@ -17,7 +17,7 @@ int main() {
     const size_t maxN = quick ? 1u << 20 : 16u << 20;
     Sel g;
     if (!g.init(maxN, R)) { printf("no GPU: %s\n", g.ctx.error.c_str()); return 2; }
-    printf("device=%s R=%u pipeline create: hist %.1f ms, pick %.1f ms\n", g.ctx.props.deviceName, R, g.kh.createMs, g.kp.createMs);
+    printf("device=%s memory=%s R=%u pipeline create: hist %.1f ms, pick %.1f ms\n", g.ctx.props.deviceName, g.ctx.memMode(), R, g.kh.createMs, g.kp.createMs);
     std::mt19937_64 rng(5);
     std::normal_distribution<double> nd(0, 1);
     std::vector<double> data(maxN);
@@ -27,7 +27,8 @@ int main() {
         size_t n = 1000; memcpy(g.in.ptr, data.data(), n * 8); memset(g.hist.ptr, 0, R * 256 * 4);
         uint32_t* s = (uint32_t*)g.st.ptr; for (uint32_t r = 0; r < R; r++) { s[3*r] = 0; s[3*r+1] = 0; s[3*r+2] = 0; }
         uint32_t pc[3] = {(uint32_t)n, 256, 0};
-        g.ctx.begin(); g.ctx.dispatch(g.kh, {&g.in, &g.hist, &g.st}, pc, 1); g.ctx.submitWait();
+        g.ctx.begin(); g.ctx.upload(g.in, n * 8); g.ctx.upload(g.hist); g.ctx.upload(g.st);
+        g.ctx.dispatch(g.kh, {&g.in, &g.hist, &g.st}, pc, 1); g.ctx.download(g.hist); g.ctx.submitWait();
         uint32_t* h = (uint32_t*)g.hist.ptr; uint64_t sum[3] = {0, 0, 0};
         for (uint32_t r = 0; r < R; r++) for (int d = 0; d < 256; d++) sum[r] += h[r * 256 + d];
         printf("diag: hist pass-0 sums (expect %zu each): %llu %llu %llu\n", n, (unsigned long long)sum[0], (unsigned long long)sum[1], (unsigned long long)sum[2]);

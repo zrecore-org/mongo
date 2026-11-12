@@ -30,7 +30,10 @@ add_custom_command(OUTPUT ${DFV}/df64_plain.spv
 add_custom_command(OUTPUT ${DFV}/df64_precise_szinp.spv
   COMMAND ${CMAKE_SOURCE_DIR}/tools/add_szinp.sh ${DFV}/df64_precise.spv ${DFV}/df64_precise_szinp.spv
   DEPENDS ${DFV}/df64_precise.spv ${CMAKE_SOURCE_DIR}/tools/add_szinp.sh VERBATIM)
-set(SPV ${DFV}/df64_precise.spv ${DFV}/df64_plain.spv ${DFV}/df64_precise_szinp.spv)
+add_custom_command(OUTPUT ${DFV}/df64_nofma.spv
+  COMMAND ${GLSLC} --target-env=vulkan1.2 -O0 -DNOFMA -o ${DFV}/df64_nofma.spv ${CMAKE_SOURCE_DIR}/shaders/df64.comp
+  DEPENDS ${CMAKE_SOURCE_DIR}/shaders/df64.comp ${CMAKE_SOURCE_DIR}/shaders/df64_ops.glsl VERBATIM)
+set(SPV ${DFV}/df64_precise.spv ${DFV}/df64_plain.spv ${DFV}/df64_precise_szinp.spv ${DFV}/df64_nofma.spv)
 foreach(S ${SHADERS})
   get_filename_component(N ${S} NAME_WE)
   set(O ${CMAKE_BINARY_DIR}/shaders/${N}.spv)
@@ -38,6 +41,13 @@ foreach(S ${SHADERS})
     COMMAND ${GLSLC} --target-env=vulkan1.2 -O0 -o ${O} ${S}
     DEPENDS ${S} VERBATIM)
   list(APPEND SPV ${O})
+  if(N STREQUAL "selftest")  # also without fma (POC 8)
+    set(OF ${CMAKE_BINARY_DIR}/shaders/selftest_nofma.spv)
+    add_custom_command(OUTPUT ${OF}
+      COMMAND ${GLSLC} --target-env=vulkan1.2 -O0 -DNOFMA -o ${OF} ${S}
+      DEPENDS ${S} ${CMAKE_SOURCE_DIR}/shaders/split_double.glsl ${CMAKE_SOURCE_DIR}/shaders/df64_ops.glsl VERBATIM)
+    list(APPEND SPV ${OF})
+  endif()
   if(N MATCHES "^sum_")  # also build without `precise`, to compare against fast math off (POC 2)
     set(OP ${CMAKE_BINARY_DIR}/shaders/${N}_plain.spv)
     add_custom_command(OUTPUT ${OP}

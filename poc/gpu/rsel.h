@@ -28,11 +28,15 @@ struct Sel {
         double t1 = gpu::nowMs();
         uint32_t wgs = std::clamp<size_t>((n + 4095) / 4096, 1, 1024);
         ctx.begin();
+        if (upload) ctx.upload(in, n * 8);
+        ctx.upload(hist, R * 256 * 4);
+        ctx.upload(st, R * 12);
         for (uint32_t p = 0; p < 8; p++) {
             uint32_t pc[3] = {(uint32_t)n, wgs * 256, p};
             ctx.dispatch(kh, {&in, &hist, &st}, pc, wgs);
             ctx.dispatch(kp, {&in, &hist, &st}, pc, 1);
         }
+        ctx.download(st, R * 12);
         ctx.submitWait();
         double t2 = gpu::nowMs();
         std::vector<double> out(R);

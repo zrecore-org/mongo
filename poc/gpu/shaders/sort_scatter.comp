@@ -32,7 +32,7 @@ void main() {
             uint pos = bh[d * pc.B + blk] + cnt[d * 256u + t];
             cnt[d * 256u + t]++;
             kout[pos] = k;
-            iout[pos] = iin[e];
+            iout[pos] = pc.pass == 0u ? e : iin[e];   // pass 0: the input index is the position itself
         }
     }
 }

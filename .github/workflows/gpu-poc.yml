@@ -8,6 +8,10 @@ name: GPU POC Check
 #     implementation of Vulkan. There is NO GPU on a GitHub-hosted runner, so this checks the host code and
 #     the SPIR-V kernels' logic against a second Vulkan implementation (the POCs were developed on
 #     MoltenVK/Metal), not GPU behaviour or speed. No timing is run: a CPU driver says nothing about it.
+#   * nvidia-t4: runs on the organization's hosted GPU runner (label gpu-t4, an NVIDIA Tesla T4, discrete GPU
+#     over PCIe). This is the only job whose timings say anything about a discrete GPU. It is BILLED per minute and
+#     the runner pool has size 1, so it runs only when the free lavapipe job passed, only for the path-filtered
+#     changes above, and a newer push cancels a run in progress. It fails if Vulkan does not pick the NVIDIA device.
 #   * apple-gpu: runs on a self-hosted Apple Silicon runner, manual dispatch only. It goes through the
 #     machine's shared-GPU lock wrapper (poc/gpu/tools/with_gpu_lock.sh) like every other GPU run here.
 #
@@ -44,6 +48,10 @@ on:
       - '!poc/gpu/tools/with_gpu_lock.sh'
   workflow_dispatch:
     inputs:
+      nvidia_gpu:
+        description: "Also run the billed NVIDIA T4 job (gpu-t4 hosted runner)"
+        type: boolean
+        default: true
       apple_gpu:
         description: "Also run the checks on the self-hosted Apple Silicon runner (uses the real GPU)"
         type: boolean
@@ -61,7 +69,6 @@ env:
   # Same versions as the local Vulkan SDK the POCs were developed against.
   VULKAN_HEADERS_TAG: v1.3.283
   VOLK_TAG: vulkan-sdk-1.3.283.0
-  GPU_POC_CORRECTNESS_ONLY: "1"
 
 jobs:
   linux-lavapipe:
@@ -69,6 +76,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.arch == 'aarch64' }}
     timeout-minutes: 60
+    env:
+      GPU_POC_CORRECTNESS_ONLY: "1"   # no timing sweeps on a CPU driver
     strategy:
       fail-fast: false
       matrix:
@@ -142,6 +151,88 @@ jobs:
         continue-on-error: true
         timeout-minutes: 15
         run: ./run.sh poc2_sum accuracy
+
+  nvidia-t4:
+    name: NVIDIA Tesla T4 (hosted GPU runner, billed)
+    needs: linux-lavapipe
+    if: github.event_name != 'workflow_dispatch' || inputs.nvidia_gpu
+    runs-on: gpu-t4
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: poc/gpu
+          fetch-depth: 1
+
+      - name: Install packages
+        timeout-minutes: 10
+        run: |
+          cat /etc/os-release | head -3
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ glslc spirv-tools libvulkan1 vulkan-tools python3-numpy
+          command -v glslc
+
+      - name: Select the NVIDIA Vulkan driver and show the device
+        run: |
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+          ls /usr/share/vulkan/icd.d /etc/vulkan/icd.d 2>/dev/null || true
+          ICD="$(ls /usr/share/vulkan/icd.d/nvidia_icd.json /etc/vulkan/icd.d/nvidia_icd.json 2>/dev/null | head -1)"
+          test -n "$ICD" || { echo "::error::no nvidia_icd.json on this image"; exit 1; }
+          echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
+          VK_ICD_FILENAMES="$ICD" vulkaninfo --summary | grep -E 'deviceName|deviceType|driverName|driverInfo|apiVersion' | head
+          VK_ICD_FILENAMES="$ICD" vulkaninfo --summary | grep -q 'NVIDIA' || { echo "::error::Vulkan does not see the NVIDIA GPU"; exit 1; }
+
+      - name: Fetch Vulkan headers and volk (pinned tags)
+        run: |
+          git clone --depth 1 --branch "$VULKAN_HEADERS_TAG" https://github.com/KhronosGroup/Vulkan-Headers "$RUNNER_TEMP/vkh"
+          git clone --depth 1 --branch "$VOLK_TAG" https://github.com/zeux/volk "$RUNNER_TEMP/volk"
+
+      - name: Build
+        working-directory: poc/gpu
+        env:
+          SPIRV_TOOLS_BIN: /usr/bin
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DVKSDK="$RUNNER_TEMP/vkh" -DVOLK_DIR="$RUNNER_TEMP/volk"
+          cmake --build build -j "$(nproc)"
+          mkdir -p out
+
+      - name: POC 4, failure handling (no GPU)
+        working-directory: poc/gpu
+        run: ./build/poc4_fallback
+
+      # The df64 self-test is informational: a failure is a finding to read, not a reason to skip the benchmarks.
+      - name: POC 8, df64 self-test (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        run: |
+          ./run.sh poc8_selftest precise || echo "::warning title=POC 8 df64 self-test (fma variant) on NVIDIA::FAILED, see the step log"
+          ./run.sh poc8_selftest nofma || echo "::warning title=POC 8 df64 self-test (no-fma variant) on NVIDIA::FAILED, see the step log"
+
+      - name: POC 1, df64 correctness (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        run: |
+          ./run.sh poc1_df64 build/shaders precise
+          python3 verify_df64.py precise || { echo "::warning title=POC 1 df64 on NVIDIA::verification FAILED, see the step log"; exit 1; }
+
+      - name: "POC 3, radix select - correctness and timing"
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        run: ./run.sh poc3_select
+
+      - name: "POC 7, radix sort - correctness and timing"
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        run: ./run.sh poc7_sort
+
+      - name: "POC 2, $sum timing (G=1 and G=16) and accuracy"
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          ./run.sh poc2_sum bench 1
+          ./run.sh poc2_sum bench 16
+          ./run.sh poc2_sum accuracy
 
   apple-gpu:
     name: Apple Silicon GPU checks (self-hosted runner, manual)
