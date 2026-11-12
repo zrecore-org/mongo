@@ -236,9 +236,11 @@ Speedup of the GPU (PCIe included) over the CPU on the runner, sustained (warmed
 - **`$sum` and `$stdDev` for one group keep a 4x to 7x gain over PCIe from about 256K values; with 16 groups they are
   break-even** (0.8x to 1.6x), the same few-groups limit as on the M1.
 - **Radix select is the biggest win**, 6x to 12x from 256K values. **Radix sort is 3x to 4x** (5x to 6x for 32-bit
-  keys), close to the M1's 3.5x to 5x. At 16M the 16 sort passes take 380 ms on the GPU (host upload 8, host
-  readback 9); per kernel over 16 passes: count 70 ms, scan 56 ms, scatter 148 ms. The single-workgroup scan is
-  about 15% of the total and is the obvious thing to parallelize.
+  keys), close to the M1's 3.5x to 5x. At 16M the 16 sort passes take 380 ms on the GPU (host upload
+  8, host readback 9). Isolated per-kernel timing over 16 passes: count 70 ms, scan 56 ms. The isolated scatter timing is
+  invalid (run without the count and scan kernels it computes positions from a stale histogram, so every key lands in
+  the same place; the M1 shows 3400 ms for the same reason), so scatter's share is only known by subtraction, roughly
+  two thirds of the total. The single-workgroup scan is about 15% and is the obvious thing to parallelize.
 - **Retracted:** (1) that the T4 radix sort was slow because of uncoalesced reads, and that the sort and select
   kernels "scale badly on NVIDIA": the sort cost was uncached host readback, and the select slowdown at 4M was GPU
   idle clocks plus run-to-run noise; (2) that the select slowdown "is not a cold-start effect": my warm test ran only
@@ -292,6 +294,10 @@ Radix select, 4M values, 3 ranks; each cell starts with 2 s of sustained load, t
   with the clocks held, against 13 to 25 W unlocked idle (and 50 to 53 W under load; the T4's limit is 70 W).
   Memory clocks and PCIe link state were not locked. This is an operator setting, not something the server can
   or should change by itself.
+- **The M1 shows a similar penalty after CPU work (local run, `poc3_select sweep`, interference at 4M values):** 4.3 ms
+  back to back, 10.8 ms right after 3 `nth_element` calls on a copy, 8.9 ms after a `std::sort`, 5.7 ms after summing 128 MB.
+  The M1 is a unified SoC, so the cause is not necessarily GPU clocks: CPU activity right before may interfere through
+  shared power, memory bandwidth or caches. Not investigated, so "Apple GPUs may ramp faster" is not supported.
 - **Design implication:** the GPU path should track how long the GPU has been idle. After a gap of a few seconds,
   raise the minimum batch size or use the CPU, unless the operator has locked the clocks. The cold penalty is gap
   dependent (1.6x at 2 s, 2.5x at 5 s, 4.9x at 12 s), so the earlier "1.5x to 2x" figure only holds for short gaps.
