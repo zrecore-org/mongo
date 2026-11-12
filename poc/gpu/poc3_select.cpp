@@ -62,6 +62,16 @@ int main() {
     std::vector<double> data(maxN);
     for (auto& x : data) x = nd(rng) * std::pow(10.0, std::uniform_real_distribution<double>(-3, 3)(rng));
 
+    {   // Diagnostic: one histogram pass alone; the counts must add up to n (never run before pick is trusted).
+        size_t n = 1000; memcpy(g.in.ptr, data.data(), n * 8); memset(g.hist.ptr, 0, R * 256 * 4);
+        uint32_t* s = (uint32_t*)g.st.ptr; for (uint32_t r = 0; r < R; r++) { s[3*r] = 0; s[3*r+1] = 0; s[3*r+2] = 0; }
+        uint32_t pc[3] = {(uint32_t)n, 256, 0};
+        g.ctx.begin(); g.ctx.dispatch(g.kh, {&g.in, &g.hist, &g.st}, pc, 1); g.ctx.submitWait();
+        uint32_t* h = (uint32_t*)g.hist.ptr; uint64_t sum[3] = {0, 0, 0};
+        for (uint32_t r = 0; r < R; r++) for (int d = 0; d < 256; d++) sum[r] += h[r * 256 + d];
+        printf("diag: hist pass-0 sums (expect %zu each): %llu %llu %llu\n", n, (unsigned long long)sum[0], (unsigned long long)sum[1], (unsigned long long)sum[2]);
+        memset(g.hist.ptr, 0, R * 256 * 4);
+    }
     // Correctness: exact match with std::nth_element, including duplicates, negatives, zeros and tiny n.
     int bad = 0, cases = 0;
     for (size_t n : {1ul, 2ul, 3ul, 17ul, 1000ul, 4097ul, 100000ul}) {
