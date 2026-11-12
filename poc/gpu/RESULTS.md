@@ -5,10 +5,9 @@ Machine: Apple M1 Pro (arm64), MoltenVK 1.2.9 (Vulkan 1.2.283), unified memory, 
 do not read these numbers as typical for discrete GPUs.** Build with
 `cmake -S . -B build && cmake --build build`; run with `./run.sh <poc> [args]` (it sets the MoltenVK ICD).
 
-Status: POC 0, POC 1, POC 2 (accuracy part) and POC 4 are done. The POC 2 timing sweep and POC 3 (sort) are
-**not run yet**: the GPU is shared with PG-Strom work (`../pg-strom`, a Metal/MoltenVK service plus a test
-lock at `/tmp/pgstrom_test.lock`), and benchmark numbers taken beside it would be unreliable. Only short,
-small runs (seconds, GPU utilization about 3%) were done so far.
+Status: all planned POCs are done (0 to 11, see below). Timings come from three places: the M1 Pro (local), the
+GitHub-hosted NVIDIA T4 (CI) and lavapipe (CI, correctness only). The local GPU is shared with PG-Strom work, so M1
+runs go through the optional lock wrapper and absolute times drift with the other load; ratios are the useful part.
 
 ## POC 0: loader and fallback: PASS
 - Loader opened with `dlopen` (no link-time dependency); compute smoke test over 1M elements: 0 mismatches.
@@ -72,6 +71,8 @@ The CPU reference is a port of `DoubleDoubleSummation::addDouble` (`src/mongo/ut
   CPU `$sum` loses this much here.
 
 ### POC 2 timing (M1 Pro, unified memory; milliseconds, GPU = prep + GPU + combine, GPU-side split)
+**The G=16 columns of this table are invalid:** they were measured with a grouped kernel that returned wrong
+results on the M1 (see "Bug: grouped kernels on Metal" below). The corrected G=16 numbers are in that section.
 | n | CPU `$sum` G=1 | GPU G=1 | speedup | CPU `$sum` G=16 | GPU G=16 | speedup |
 |---|---|---|---|---|---|---|
 | 16K | 0.109 | 0.383 | 0.28x | 0.039 | 0.408 | 0.10x |
@@ -304,9 +305,56 @@ Radix select, 4M values, 3 ranks; each cell starts with 2 s of sustained load, t
   Not measured: other GPUs (the M1 was not tested, Apple GPUs may ramp faster), and how real query arrival patterns
   fall across these gaps.
 
+## Bug: grouped kernels were wrong on Metal (found while checking POC 9 on the M1)
+POC 9 printed that the GPU and CPU `$stdDev` for 16 groups disagreed (1% at 1M values on the M1, never on the T4).
+The POC 2 accuracy test used one group, so nothing had checked a grouped result. A new `poc2_sum groups` check
+(every group's GPU sum against the CPU double-double sum, relative to the group's sum of |x|) showed the grouped
+`$sum` kernel was wrong on the M1 for 2, 4 and 16 groups (errors 1% to 3%; 1 group exact), for both split variants.
+Cause: the per-thread accumulators were declared `vec2 acc[GROUPS]`, an array sized by a specialization constant,
+which Metal (through MoltenVK) miscompiles. This is the second time that pattern failed (the first was the shared
+array in the radix select), so the rule is: **no arrays sized by specialization constants; use a fixed maximum**
+(`kMaxGroups = 16` now). After the fix all of 1, 2, 4 and 16 groups match to about 1e-17 on the M1. The check is a
+gating step in CI on lavapipe and the T4 (the T4 looked right because POC 9 printed no mismatch, but it had not
+been checked directly).
+
+Corrected M1 timings for `$sum` (GPU split, PCIe not applicable). The machine was busier than for the first
+measurements (CPU `$sum` 2x slower than before), so read the ratios, not the milliseconds:
+
+| n | 64K | 256K | 1M | 4M | 16M |
+|---|---|---|---|---|---|
+| 1 group, speedup | 0.89x | 1.9x | 4.1x | 4.1x | 5.7x |
+| 16 groups, speedup | 0.18x | 0.56x | 0.68x | 1.9x | 2.2x |
+
+With 16 groups the old (wrong) kernel showed 1.6x at 1M; the correct one needs about 4M values to win. The few-groups
+conclusion stands, with a higher threshold for several groups. POC 5's G=16 comparisons (1.4x at 1M, 1.3x at 16M)
+rest on the wrong kernel and are not valid either.
+
+## POC 9 on the M1 (after the fix)
+Accuracy is the same as on the T4 (GPU df64 4.4e-16 to 8.7e-9, CPU Welford 1.7e-14 to 1.4e-6; the "mean 1e9+12345.678"
+row shows the 48-bit df64 split: 8.7e-9 against 0 for a plain double two-pass). All 16-group results now match the
+CPU. Timing (busy machine): 1 group 1.1x at 256K, 2.9x at 1M, 3.3x at 4M, 2.8x at 16M (an earlier quieter run gave 5x at
+16M); 16 groups 0.3x at 1M, 0.7x at 4M, 1.0x at 16M.
+
+## POC 10: in-place reads of host memory on a unified-memory GPU (`poc10_inplace.cpp`, M1)
+MoltenVK offers `VK_EXT_external_memory_host`, so a server could decode blocks straight into a page-aligned arena and
+hand it to the GPU as a buffer instead of copying scattered blocks into a Vulkan buffer. `$sum` kernel, 1 group,
+1000-value blocks, all results bit-identical. Milliseconds, GPU path total (kernel included; decode excluded):
+
+| blocks (values) | gather into mapped buffer | import the arena per batch | arena imported once and reused |
+|---|---|---|---|
+| 256 (256K) | 1.75 | 1.71 | 1.54 |
+| 1024 (1M) | 4.16 | 3.66 | 3.31 |
+| 4096 (4M) | 10.3 | 8.1 | 7.1 |
+| 16384 (16M) | 33.9 | 23.0 | 17.7 |
+
+Importing saves 2% to 12% up to 1M values and 21% to 32% at 4M to 16M; reusing a pooled arena saves 11% to 31% and 48% at
+16M. It needs the engine to decode into page-aligned arena memory (16 KB pages on the M1) and a pool of imported
+arenas to avoid the per-batch import cost. Only measured on the M1; on a discrete GPU importing host memory means
+reading it over PCIe, so this is a unified-memory (Apple, integrated) optimization.
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
-- Go only as opt-in, for batches of at least 256K elements (about 1M for `$sum` with several groups), with the CPU path as automatic fallback (POC 4)
+- Go only as opt-in, for batches of at least 256K elements (about 4M for `$sum` and `$stdDev` with 16 groups on the M1), with the CPU path as automatic fallback (POC 4)
   and a startup known-answer self-test that gates df64 use (POC 1 and lavapipe above: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
