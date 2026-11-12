@@ -179,6 +179,12 @@ and #5. The tree has almost no SIMD today (`fts/unicode/byte_vector_*`).
 - Few server deployments have GPUs, so the audience may be small.
 - Maintenance cost: shaders, checked-in blobs, driver quirks, CI matrix.
 - Open: is a checked-in generated binary blob acceptable? Which hardware tiers are officially supported?
+- Open (Phase 1 design): kernel source language. The POCs use GLSL compiled with `glslc`; the author's pg-strom `vulkan-gpu`
+  fork uses Slang (real preprocessor, generics, a Metal output, one source for kernels and the CPU twin). The strongest
+  argument for Slang here is one source for kernels and the CPU oracle; the costs are `slangc` as a new build
+  dependency and, if specialization runs at runtime, a compiler on the server host. Decide at Phase 1 design start,
+  after checking Slang's CPU target against the Bazel build and how it emits `precise`/NoContraction (df64 needs it).
+  See `poc/gpu/README.md` credits if adopted.
 
 Non-goals: GPU use in the matcher, transport, storage I/O, replication, FLE and Decimal128; ANN (an extension); CUDA,
 Metal or ROCm backends; multi-GPU; any behavior change when the flag is off.
