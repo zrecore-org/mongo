@@ -201,9 +201,12 @@ the T4 with that CPU, not with the M1. The first T4 run (43163593526) was invali
 small host-visible VRAM window (PCIe BAR) for unified memory, ran no staging copies, and POC 7 ran out of
 device memory. That is fixed.
 
-**Correctness on a real discrete NVIDIA GPU:** df64 add/mul/div/sqrt kernel errors 0.1 to 0.6 x 2^-44 (POC 1
-passes, `fma` is fused), the GPU-side double -> df64 split, POC 8 self-test 6/6 on both variants (see below),
-radix select 63/63, radix sort 32/32 permutations, POC 4. The df64 failure of lavapipe does not occur here.
+**Correctness on a real discrete NVIDIA GPU:** radix select 63/63, radix sort 32/32 permutations, `$sum` runs
+and POC 4 pass in this run. The df64 results (POC 1 add/mul/div/sqrt kernel errors 0.1 to 0.6 x 2^-44, `fma`
+fused, GPU-side split correct) come from the first T4 run (43163593526), where the harness read the BAR window
+directly. In this run POC 0, 1 and 8 returned all zeros (FAIL, worst error 2^44) because those three programs had
+not been given the staging copies, so they read an empty host buffer: a harness bug, not a device result. They
+are fixed and need one more T4 run to confirm under staging. The df64 failure of lavapipe does not occur on the T4.
 
 | workload | 64K | 256K | 1M | 4M | 16M |
 |---|---|---|---|---|---|
@@ -223,9 +226,10 @@ radix select 63/63, radix sort 32/32 permutations, POC 4. The df64 failure of la
   each thread 16 consecutive keys, so neighbouring lanes read far apart (uncoalesced), which a unified-memory
   Apple GPU tolerates and an NVIDIA GPU does not. This is a hypothesis, not a measurement. These numbers describe
   an unoptimized kernel, not a limit of the hardware.
-- **POC 8 df64 self-test:** passes all six probes on the T4 and the M1 (the earlier `sqrt` failure was a bug in
-  the test's inputs). The no-`fma` variant is as accurate as the `fma` one, so it can serve drivers whose `fma`
-  is not fused if lavapipe turns out to be one (not yet checked on lavapipe).
+- **POC 8 df64 self-test:** passes all six probes on the M1 on both variants (an earlier `sqrt` failure was a bug
+  in the test's inputs). On the T4 the first run's df64 results are valid (above); the self-test itself has not
+  yet run correctly there. The no-`fma` variant is as accurate as the `fma` one on the M1, so it can serve drivers
+  whose `fma` is not fused if lavapipe turns out to be one (not yet checked on lavapipe).
 - `$sum` accuracy on the T4 equals the lavapipe numbers exactly, which is how the earlier lavapipe claim was
   caught (see the retraction above).
 

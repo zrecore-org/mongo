@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
     const std::string selftest = tag == "nofma" ? "build/shaders/selftest_nofma.spv" : "build/shaders/selftest.spv";
     gpu::Ctx ctx;
     if (!ctx.init(gpu::defaultLoaderPaths())) { printf("no GPU: %s\n", ctx.error.c_str()); return 2; }
-    printf("device=%s variant=%s\n", ctx.props.deviceName, tag.c_str());
+    printf("device=%s memory=%s variant=%s\n", ctx.props.deviceName, ctx.memMode(), tag.c_str());
     const uint32_t n = 4096;
     std::mt19937_64 rng(2024);
     auto u01 = [&] { return std::uniform_real_distribution<double>(0, 1)(rng); };
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
     for (uint32_t op = 0; op < 2; op++) {
         for (uint32_t i = 0; i < n; i++) { ((float*)A.ptr)[2 * i] = fa[i]; ((float*)A.ptr)[2 * i + 1] = fb[i]; }
         uint32_t pc[2] = {n, op};
-        ctx.begin(); ctx.dispatch(ks, {&A, &R}, pc, (n + 63) / 64); ctx.submitWait();
+        ctx.begin(); ctx.upload(A); ctx.dispatch(ks, {&A, &R}, pc, (n + 63) / 64); ctx.download(R); ctx.submitWait();
         size_t bad = 0; double worst = 0;
         for (uint32_t i = 0; i < n; i++) {
             float p = fa[i] * fb[i]; float e = (float)((double)fa[i] * (double)fb[i] - (double)p);  // exact: 48-bit product fits a double
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
         for (auto& x : d) x = sgn() * mant() * std::ldexp(1.0, (int)(rng() % 101) - 50);
         memcpy(A.ptr, d.data(), n * 8);
         uint32_t pc[2] = {n, 2};
-        ctx.begin(); ctx.dispatch(ks, {&A, &R}, pc, (n + 63) / 64); ctx.submitWait();
+        ctx.begin(); ctx.upload(A); ctx.dispatch(ks, {&A, &R}, pc, (n + 63) / 64); ctx.download(R); ctx.submitWait();
         size_t bad = 0; double worst = 0;
         for (uint32_t i = 0; i < n; i++) {
             double got = (double)((float*)R.ptr)[2 * i] + (double)((float*)R.ptr)[2 * i + 1];
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     const char* names[3] = {"df64 mul vs exact", "df64 div vs exact", "df64 sqrt vs exact"};
     for (uint32_t op = 1; op < 4; op++) {
         uint32_t pc[2] = {n, op};
-        ctx.begin(); ctx.dispatch(k, {&A, &Bb, &R}, pc, (n + 63) / 64); ctx.submitWait();
+        ctx.begin(); ctx.upload(A); ctx.upload(Bb); ctx.dispatch(k, {&A, &Bb, &R}, pc, (n + 63) / 64); ctx.download(R); ctx.submitWait();
         size_t bad = 0; double worst = 0;
         for (uint32_t i = 0; i < n; i++) {
             // Reference on the split inputs (hi+lo as doubles); a double carries 53 bits, enough to see 2^-41.

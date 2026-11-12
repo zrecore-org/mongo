@@ -14,10 +14,10 @@ int main(int argc, char** argv) {
         printf("cpu result[999]=%g (expect 1999)\n", r[999]);
         return r[999] == 1999.f ? 0 : 1;
     }
-    printf("device: %s  type=%d  api=%u.%u.%u  unifiedMemory=%d\n", ctx.props.deviceName,
+    printf("device: %s  type=%d  api=%u.%u.%u  unifiedMemory=%d memory=%s\n", ctx.props.deviceName,
            ctx.props.deviceType, VK_VERSION_MAJOR(ctx.props.apiVersion),
            VK_VERSION_MINOR(ctx.props.apiVersion), VK_VERSION_PATCH(ctx.props.apiVersion),
-           (int)ctx.unifiedMemory);
+           (int)ctx.unifiedMemory, ctx.memMode());
     printf("shaderFloat64=%d shaderInt64=%d\n", ctx.feats.shaderFloat64, ctx.feats.shaderInt64);
     const uint32_t n = 1 << 20;
     auto a = ctx.alloc(n * 4), r = ctx.alloc(n * 4);
@@ -25,7 +25,9 @@ int main(int argc, char** argv) {
     auto k = ctx.makeKernel(spv, 2, 4);
     printf("pipeline create (incl. MSL compile): %.2f ms\n", k.createMs);
     ctx.begin();
+    ctx.upload(a);
     ctx.dispatch(k, {&a, &r}, &n, (n + 63) / 64);
+    ctx.download(r);
     double ms = ctx.submitWait();
     uint32_t bad = 0;
     for (uint32_t i = 0; i < n; i++)

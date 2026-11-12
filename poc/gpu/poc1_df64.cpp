@@ -69,7 +69,9 @@ int main(int argc, char** argv) {
     for (uint32_t op = 0; op < 4; op++) {
         uint32_t pc[2] = {n, op};
         ctx.begin();
+        ctx.upload(A); ctx.upload(B);
         ctx.dispatch(k, {&A, &B, &R}, pc, (n + 63) / 64);
+        ctx.download(R);
         ctx.submitWait();
         wr("df64_res_" + tag + "_" + std::to_string(op) + ".bin", R.ptr, n * 8);
     }
