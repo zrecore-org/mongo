@@ -146,6 +146,23 @@ jobs:
           # continue-on-error shows a green mark even when this fails, so say so in the run summary.
           python3 verify_df64.py precise || { echo "::warning title=POC 1 df64 on lavapipe::df64 verification FAILED, see the step log"; exit 1; }
 
+      # Tests the hypothesis that lavapipe's fma is not fused (POC 1 mul/div/sqrt fail there): if so the fma probe
+      # fails for the first variant and the Dekker (no-fma) variant passes.
+      - name: POC 8, df64 self-test (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        run: |
+          ./run.sh poc8_selftest precise || echo "::warning title=POC 8 df64 self-test (fma variant) on lavapipe::FAILED, see the step log"
+          ./run.sh poc8_selftest nofma || echo "::warning title=POC 8 df64 self-test (no-fma variant) on lavapipe::FAILED, see the step log"
+
+      - name: POC 1, df64 correctness without fma (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          ./run.sh poc1_df64 build/shaders nofma
+          python3 verify_df64.py nofma || { echo "::warning title=POC 1 df64 (no-fma variant) on lavapipe::verification FAILED, see the step log"; exit 1; }
+
       - name: POC 2, `$sum` accuracy (informational)
         working-directory: poc/gpu
         continue-on-error: true
