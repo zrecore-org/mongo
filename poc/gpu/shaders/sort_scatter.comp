@@ -1,0 +1,38 @@
+#version 450
+// Radix sort pass, step 3: stable scatter. Output position = global offset of (digit, block) + number of
+// same-digit keys in earlier threads of this block + earlier same-digit keys of this thread.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer KI { uvec2 kin[]; };
+layout(std430, binding = 1) readonly buffer II { uint iin[]; };
+layout(std430, binding = 2) writeonly buffer KO { uvec2 kout[]; };
+layout(std430, binding = 3) writeonly buffer IO { uint iout[]; };
+layout(std430, binding = 4) readonly buffer H { uint bh[]; };
+layout(push_constant) uniform P { uint n; uint B; uint pass; } pc;
+shared uint cnt[16 * 256];
+uint digitOf(uvec2 k, uint pass) { uint s = pass * 4u; return s < 32u ? (k.x >> s) & 15u : (k.y >> (s - 32u)) & 15u; }
+void main() {
+    uint t = gl_LocalInvocationID.x, blk = gl_WorkGroupID.x;
+    for (uint d = 0u; d < 16u; d++) cnt[d * 256u + t] = 0u;
+    uint base = blk * 4096u + t * 16u;
+    for (uint i = 0u; i < 16u; i++) {
+        uint e = base + i;
+        if (e < pc.n) cnt[digitOf(kin[e], pc.pass) * 256u + t]++;
+    }
+    barrier();
+    if (t < 16u) {   // exclusive prefix over threads, per digit
+        uint run = 0u;
+        for (uint j = 0u; j < 256u; j++) { uint v = cnt[t * 256u + j]; cnt[t * 256u + j] = run; run += v; }
+    }
+    barrier();
+    for (uint i = 0u; i < 16u; i++) {
+        uint e = base + i;
+        if (e < pc.n) {
+            uvec2 k = kin[e];
+            uint d = digitOf(k, pc.pass);
+            uint pos = bh[d * pc.B + blk] + cnt[d * 256u + t];
+            cnt[d * 256u + t]++;
+            kout[pos] = k;
+            iout[pos] = iin[e];
+        }
+    }
+}

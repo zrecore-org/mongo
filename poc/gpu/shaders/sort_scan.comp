@@ -1,0 +1,19 @@
+#version 450
+// Radix sort pass, step 2: exclusive scan of the 16*B digit-major block histogram, in one workgroup.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) buffer H { uint bh[]; };
+layout(push_constant) uniform P { uint n; uint B; uint pass; } pc;
+shared uint part[256];
+void main() {
+    uint t = gl_LocalInvocationID.x;
+    uint M = 16u * pc.B, per = (M + 255u) / 256u;
+    uint lo = min(t * per, M), hi = min(lo + per, M);
+    uint s = 0u;
+    for (uint i = lo; i < hi; i++) s += bh[i];
+    part[t] = s;
+    barrier();
+    if (t == 0u) { uint run = 0u; for (uint j = 0u; j < 256u; j++) { uint v = part[j]; part[j] = run; run += v; } }
+    barrier();
+    uint run = part[t];
+    for (uint i = lo; i < hi; i++) { uint v = bh[i]; bh[i] = run; run += v; }
+}

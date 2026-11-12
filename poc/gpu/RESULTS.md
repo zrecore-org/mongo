@@ -132,6 +132,27 @@ rank plus `std::max_element` over the lower part gives bit-identical results 12x
 Earlier fixes: the `rsel_hist.comp` shared array held only 8 ranks, so runs above 8 ranks wrote out of
 bounds (NaN results); it is now 16 and larger rank sets run in chunks.
 
+## POC 7: sort-key radix sort (`poc7_sort.cpp`, shaders `sort_*.comp`, `out/poc7_session.log`)
+GPU LSD radix sort of (u64 key prefix, u32 index) pairs, 4-bit digits, 16 passes for 64-bit keys (8 for
+32-bit), three kernels per pass (block histogram, scan, stable scatter). Correct: the permutation equals
+`std::stable_sort` in 32/32 cases (n from 1 to 1M, duplicates, sorted, high bits set). The CPU baseline is
+`std::sort` of the same (key, index) pairs. Times in ms:
+
+| n | CPU std::sort | GPU 64-bit | speedup | GPU 32-bit | speedup | reordering 32-byte records by the permutation (CPU) |
+|---|---|---|---|---|---|---|
+| 64K | 3.4 | 1.9 | 1.8x | 0.9 | 3.8x | 0.1 |
+| 256K | 15.5 | 5.0 | 3.1x | 2.7 | 5.8x | 0.6 |
+| 1M | 69.9 | 20.0 | 3.5x | 8.1 | 8.7x | 4.9 |
+| 4M | 309 | 69.4 | 4.5x | 33.6 | 9.2x | 25.8 |
+| 16M | 1341 | 271 | 4.9x | 134 | 10.0x | 116 |
+
+- Break-even is below 64K for this pair sort, but the plan's 1M+ keys is still where it matters.
+- Not measured: extracting key prefixes from real sorter records, and the CPU tie-fixup of equal prefixes
+  on the full keys. A CPU path that sorts the same index pairs also pays the reorder, so it cancels:
+  at 16M, (1341+116)/(271+116) is about 3.8x end to end.
+- Sort throughput is bandwidth-bound: 16 passes at about 12 B read and written per key. Prefixes that fit
+  in 32 bits halve the time.
+
 ## POC 5: batch assembly cost (`poc5_gather.cpp`, CPU only, no GPU)
 Gather of scattered 1000-double blocks into one contiguous staging buffer (best of 20, warm cache, so a
 lower bound; it excludes BSONColumn decode, which would be needed either way):

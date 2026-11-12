@@ -1,0 +1,23 @@
+#version 450
+// Radix sort pass, step 1: per-block histogram of one 4-bit digit. Block = 256 threads x 16 consecutive keys.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer K { uvec2 keys[]; };   // x = low word, y = high word
+layout(std430, binding = 1) buffer H { uint bh[]; };               // digit-major: [d * B + block]
+layout(push_constant) uniform P { uint n; uint B; uint pass; } pc;
+shared uint cnt[16 * 256];                                         // [digit][thread]; each thread owns its column
+uint digitOf(uvec2 k, uint pass) { uint s = pass * 4u; return s < 32u ? (k.x >> s) & 15u : (k.y >> (s - 32u)) & 15u; }
+void main() {
+    uint t = gl_LocalInvocationID.x, blk = gl_WorkGroupID.x;
+    for (uint d = 0u; d < 16u; d++) cnt[d * 256u + t] = 0u;
+    uint base = blk * 4096u + t * 16u;
+    for (uint i = 0u; i < 16u; i++) {
+        uint e = base + i;
+        if (e < pc.n) cnt[digitOf(keys[e], pc.pass) * 256u + t]++;
+    }
+    barrier();
+    if (t < 16u) {
+        uint tot = 0u;
+        for (uint j = 0u; j < 256u; j++) tot += cnt[t * 256u + j];
+        bh[t * pc.B + blk] = tot;
+    }
+}
