@@ -286,7 +286,7 @@ Radix select, 4M values, 3 ranks; each cell starts with 2 s of sustained load, t
   this size). The SM clock is the same at 5 s and 12 s, so the extra slowdown comes from a deeper idle state
   (lower power) that nvidia-smi's SM clock does not show; the cause is not identified.
 - **A heartbeat does not help:** a tiny dispatch every 20 ms during the gap gave the same times and the same
-  clocks as idling (30 W and the same slow queries). The driver ignores that little load.
+  clocks and power as idling (25 W at 2 s and 5 s, 13 W at 12 s), with the same slow queries. The driver ignores that little load.
 - **Locking the clocks works:** `sudo nvidia-smi -lgc 1590,1590` (allowed on the hosted runner) removes the penalty:
   the query after 12 s idle took 6.75 to 6.94 ms, against 31.8 ms unlocked. The price is idle power: about 37 to 38 W
   with the clocks held, against 13 to 25 W unlocked idle (and 50 to 53 W under load; the T4's limit is 70 W).
