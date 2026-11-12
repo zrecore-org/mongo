@@ -60,3 +60,4 @@ for op in range(4):
         print(f"{OPS[op]:5} {CATS[c]:7} {len(idx):6} {nonfin:6} {km:11.2f} {quantile(kerr,.999):13.2f} {(max(eerr) if eerr else float('nan')):10.1f} {nfl:8} {unflagged_bad:13}")
         if unflagged_bad: ok_all = False
 print("RESULT:", "PASS (every kernel error >4u or non-finite result was caught by the preflight)" if ok_all else "FAIL (unflagged errors exist)")
+sys.exit(0 if ok_all else 1)

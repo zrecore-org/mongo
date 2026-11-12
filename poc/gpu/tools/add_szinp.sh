@@ -2,7 +2,7 @@
 # Adds the SPIR-V SignedZeroInfNanPreserve execution mode (float32) to a compute shader.
 # MoltenVK's on-demand fast-math mode compiles shaders without fast math when such a mode is present.
 set -e
-SDK="$HOME/VulkanSDK/1.3.283.0/macOS/bin"
+SDK="${SPIRV_TOOLS_BIN:-$HOME/VulkanSDK/1.3.283.0/macOS/bin}"   # CI sets SPIRV_TOOLS_BIN=/usr/bin
 "$SDK/spirv-dis" "$1" | python3 -c '
 import sys,re
 t=sys.stdin.read()

@@ -48,7 +48,8 @@ struct GpuSort {
 };
 
 int main() {
-    const size_t maxN = 16u << 20;
+    const bool quick = getenv("GPU_POC_CORRECTNESS_ONLY") != nullptr;  // CI on a CPU Vulkan driver: no timing sweep
+    const size_t maxN = quick ? 2u << 20 : 16u << 20;
     GpuSort g;
     if (!g.init(maxN)) { printf("no GPU: %s\n", g.ctx.error.c_str()); return 2; }
     printf("device=%s pipeline create: count %.1f, scan %.1f, scatter %.1f ms\n", g.ctx.props.deviceName, g.kc.createMs, g.ks.createMs, g.kt.createMs);
@@ -71,6 +72,7 @@ int main() {
         }
     }
     printf("correctness: %d/%d cases give the same permutation as std::stable_sort\n", cases - bad, cases);
+    if (quick) { g.shutdown(); return bad ? 1 : 0; }
     printf("%10s | %9s | %-12s | speedup (64-bit keys) | %-18s | speedup (32-bit)\n", "n", "std::sort", "gpu 64-bit", "gpu 32-bit");
     std::string csv = "n,cpu_sort_ms,gpu64_ms,gpu64_gpu_ms,gpu32_ms,reorder_ms\n";
     for (size_t n = 65536; n <= maxN; n *= 4) {

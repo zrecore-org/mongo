@@ -1,0 +1,168 @@
+name: GPU POC Check
+
+# CI for the standalone Vulkan/df64 proofs of concept in poc/gpu (branch vulkan-gpu). Nothing under src/ is
+# involved, so this workflow ignores everything outside poc/gpu.
+#
+# What the jobs can and cannot show (read before trusting a green check):
+#   * linux-lavapipe: builds the POCs and runs their correctness checks on lavapipe, Mesa's CPU
+#     implementation of Vulkan. There is NO GPU on a GitHub-hosted runner, so this checks the host code and
+#     the SPIR-V kernels' logic against a second Vulkan implementation (the POCs were developed on
+#     MoltenVK/Metal), not GPU behaviour or speed. No timing is run: a CPU driver says nothing about it.
+#   * apple-gpu: runs on a self-hosted Apple Silicon runner, manual dispatch only. It goes through the
+#     machine's shared-GPU lock wrapper (poc/gpu/tools/with_gpu_lock.sh) like every other GPU run here.
+#
+# Gating vs informational: the integer-only POCs (poc3_select radix select, poc7_sort radix sort) and the
+# CPU-only failure-handling POC (poc4_fallback) must pass. The df64 float POCs (poc0, poc1, poc2) are
+# informational on lavapipe (continue-on-error) because df64 depends on the driver's float semantics, which is
+# exactly what a different driver may legitimately change; read their output instead of the check mark.
+#
+# Not yet run: written without a CI run (no Linux runner on the development machine). The first run will
+# likely need adjustments. The arm64 runner label (ubuntu-24.04-arm) needs a public repository or an arm64
+# runner of your own; that matrix entry is allowed to fail.
+
+on:
+  push:
+    branches: [vulkan-gpu]
+    paths:
+      - 'poc/gpu/**'
+      - '.github/workflows/gpu-poc.yml'
+      # Docs and local-only helpers do not affect the build or the checks.
+      - '!poc/gpu/**.md'
+      - '!poc/gpu/.gitignore'
+      - '!poc/gpu/run_gpu_pocs.sh'
+      - '!poc/gpu/run_matrix.sh'
+      - '!poc/gpu/tools/with_gpu_lock.sh'
+  pull_request:
+    paths:
+      - 'poc/gpu/**'
+      - '.github/workflows/gpu-poc.yml'
+      # Same filter as the push trigger.
+      - '!poc/gpu/**.md'
+      - '!poc/gpu/.gitignore'
+      - '!poc/gpu/run_gpu_pocs.sh'
+      - '!poc/gpu/run_matrix.sh'
+      - '!poc/gpu/tools/with_gpu_lock.sh'
+  workflow_dispatch:
+    inputs:
+      apple_gpu:
+        description: "Also run the checks on the self-hosted Apple Silicon runner (uses the real GPU)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# A newer push to the same ref replaces the run in progress. A manual run is its own group.
+concurrency:
+  group: gpu-poc-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && format('-manual-{0}', github.run_id) || '' }}
+  cancel-in-progress: true
+
+env:
+  # Same versions as the local Vulkan SDK the POCs were developed against.
+  VULKAN_HEADERS_TAG: v1.3.283
+  VOLK_TAG: vulkan-sdk-1.3.283.0
+  GPU_POC_CORRECTNESS_ONLY: "1"
+
+jobs:
+  linux-lavapipe:
+    name: Linux ${{ matrix.arch }}, lavapipe (CPU Vulkan, no GPU)
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.arch == 'aarch64' }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      # The repository is huge; the POCs need only their own directory.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: poc/gpu
+          fetch-depth: 1
+
+      - name: Install packages
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ glslc spirv-tools libvulkan1 mesa-vulkan-drivers vulkan-tools python3-numpy
+
+      - name: Fetch Vulkan headers and volk (pinned tags)
+        run: |
+          git clone --depth 1 --branch "$VULKAN_HEADERS_TAG" https://github.com/KhronosGroup/Vulkan-Headers "$RUNNER_TEMP/vkh"
+          git clone --depth 1 --branch "$VOLK_TAG" https://github.com/zeux/volk "$RUNNER_TEMP/volk"
+
+      - name: Build
+        working-directory: poc/gpu
+        env:
+          SPIRV_TOOLS_BIN: /usr/bin
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DVKSDK="$RUNNER_TEMP/vkh" -DVOLK_DIR="$RUNNER_TEMP/volk"
+          cmake --build build -j "$(nproc)"
+          mkdir -p out
+
+      - name: Select the lavapipe driver and show the device (informational)
+        run: |
+          ICD="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)"
+          echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
+          VK_ICD_FILENAMES="$ICD" vulkaninfo --summary | head -40
+
+      - name: POC 4, failure handling (no GPU)
+        working-directory: poc/gpu
+        run: ./build/poc4_fallback
+
+      - name: POC 3, radix select correctness
+        working-directory: poc/gpu
+        timeout-minutes: 20
+        run: ./run.sh poc3_select
+
+      - name: POC 7, radix sort correctness
+        working-directory: poc/gpu
+        timeout-minutes: 20
+        run: ./run.sh poc7_sort
+
+      - name: POC 0, loader and probe (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        run: ./run.sh poc0_probe
+
+      - name: POC 1, df64 correctness (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          ./run.sh poc1_df64 build/shaders precise
+          python3 verify_df64.py precise
+
+      - name: POC 2, `$sum` accuracy (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 15
+        run: ./run.sh poc2_sum accuracy
+
+  apple-gpu:
+    name: Apple Silicon GPU checks (self-hosted runner, manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.apple_gpu
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: poc/gpu
+          fetch-depth: 1
+
+      # Uses the Vulkan SDK at ~/VulkanSDK/1.3.283.0/macOS, the CMake default.
+      - name: Build
+        working-directory: poc/gpu
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j "$(sysctl -n hw.ncpu)"
+          mkdir -p out
+
+      # One short session on the shared GPU (the same protocol as pg-strom's test lock).
+      - name: Correctness checks on the real GPU
+        working-directory: poc/gpu
+        run: |
+          tools/with_gpu_lock.sh sh -c './run.sh poc3_select && ./run.sh poc7_sort && ./run.sh poc2_sum accuracy'

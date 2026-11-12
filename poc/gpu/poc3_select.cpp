@@ -13,7 +13,8 @@ static uint64_t bits(double d) { uint64_t b; memcpy(&b, &d, 8); return b; }
 
 int main() {
     const uint32_t R = 3;
-    const size_t maxN = 16u << 20;
+    const bool quick = getenv("GPU_POC_CORRECTNESS_ONLY") != nullptr;  // CI on a CPU Vulkan driver: no timing sweep
+    const size_t maxN = quick ? 1u << 20 : 16u << 20;
     Sel g;
     if (!g.init(maxN, R)) { printf("no GPU: %s\n", g.ctx.error.c_str()); return 2; }
     printf("device=%s R=%u pipeline create: hist %.1f ms, pick %.1f ms\n", g.ctx.props.deviceName, R, g.kh.createMs, g.kp.createMs);
@@ -51,6 +52,7 @@ int main() {
     }
     printf("correctness: %d/%d ranks equal std::nth_element (numeric ==)\n", cases - bad, cases);
 
+    if (quick) { g.shutdown(); return bad ? 1 : 0; }
     printf("%10s | %10s %10s | %9s (upload/gpu/read) | speedup vs nth_element x3, vs sort\n", "n", "nth_elem x3", "std::sort", "gpu total");
     std::string csv = "n,nth3_ms,sort_ms,gpu_total_ms,upload_ms,gpu_ms,read_ms\n";
     for (size_t n = 1024; n <= maxN; n *= 4) {
