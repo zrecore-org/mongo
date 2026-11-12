@@ -358,6 +358,10 @@ reading it over PCIe, so this is a unified-memory (Apple, integrated) optimizati
   and a startup known-answer self-test that gates df64 use (POC 1 and lavapipe above: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
+- Phase 1 candidates, in order: (1) selection/percentile (exact, 6x to 12x on the T4); (2) `$stdDev` with one or few
+  groups (POC 9: two df64 passes, accuracy matches the CPU; 6x to 7x on the T4, 2.9x to 3.3x on the M1 from 1M values
+  for one group; with 16 groups it loses to the CPU on the M1 until about 16M values); (3) `$sum` with few groups;
+  (4) key-prefix sort. `$stdDev` shares the `$sum` limits: not bit-identical, few groups only, opt-in.
 - Discrete GPU (T4, PCIe included): `$sum` and `$stdDev` for few groups keep a 3x to 7x gain, radix sort is about
   3x to 4x and radix select 6x to 12x at 256K and above, at sustained clocks (a cold first query costs 1.6x to 4.9x
   more on the T4 depending on the idle gap; POC 11). The df64 startup self-test picks the variant (fma, or Dekker without fma on lavapipe).
