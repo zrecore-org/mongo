@@ -264,6 +264,12 @@ jobs:
         timeout-minutes: 15
         run: ./run.sh poc9_stddev
 
+      - name: "POC 11, pre-warming and idle-clock keep-alive"
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 10
+        run: ./run.sh poc11_prewarm
+
       - name: "POC 2, $sum timing (G=1 and G=16) and accuracy"
         working-directory: poc/gpu
         continue-on-error: true
