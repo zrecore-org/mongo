@@ -132,6 +132,13 @@ jobs:
         timeout-minutes: 20
         run: ./run.sh poc7_sort
 
+      # Gating: every group's GPU sum must match the CPU. This caught a wrong grouped kernel on Metal (M1) that the
+      # one-group accuracy test could not see.
+      - name: POC 2, grouped $sum correctness
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        run: ./run.sh poc2_sum groups
+
       - name: POC 0, loader and probe (informational)
         working-directory: poc/gpu
         continue-on-error: true
@@ -284,6 +291,11 @@ jobs:
         if: always()
         continue-on-error: true
         run: sudo nvidia-smi -rgc || true
+
+      - name: "POC 2, grouped $sum correctness"
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        run: ./run.sh poc2_sum groups
 
       - name: "POC 2, $sum timing (G=1 and G=16) and accuracy"
         working-directory: poc/gpu

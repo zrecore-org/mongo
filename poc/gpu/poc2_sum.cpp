@@ -60,6 +60,7 @@ struct Gpu {
 
     bool init(size_t maxN, uint32_t G, uint32_t wgSize) {
         if (!ctx.init(gpu::defaultLoaderPaths())) return false;
+        if (G > 16) { ctx.error = "more than 16 groups"; return false; }   // kMaxGroups in the shaders
         wg = wgSize; curG = G;
         const char* sfx = getenv("POC_SHADER_SUFFIX");  // "_plain" = built without `precise`
         std::string x = sfx ? sfx : "";
@@ -255,8 +256,39 @@ static int accuracy() {
     return 0;
 }
 
+// Grouped correctness: every group's GPU sum against the CPU double-double sum, relative to that group's sum of |x|.
+// (The accuracy test above uses one group; a wrong grouped kernel would otherwise go unnoticed.)
+static int groupsCheck() {
+    const size_t n = 1u << 20;
+    std::mt19937_64 rng(31);
+    auto data = makeData(n, rng);
+    std::vector<uint32_t> gids(n);
+    int bad = 0;
+    printf("grouped correctness (n=1M): max over groups of |gpu - cpu| / sum|x|\n%3s %-9s %12s %s\n", "G", "split", "max rel err", "result");
+    for (uint32_t G : {1u, 2u, 4u, 16u}) {
+        for (auto& x : gids) x = (uint32_t)(rng() % G);
+        std::vector<DD> cpu; cpuDd(data.data(), gids.data(), G, n, cpu);
+        std::vector<double> absSum(G, 0.0);
+        for (size_t i = 0; i < n; i++) absSum[gids[i]] += std::fabs(data[i]);
+        Gpu gp;
+        if (!gp.init(n, G, 256)) { printf("no GPU: %s\n", gp.ctx.error.c_str()); return 2; }
+        for (int split = 0; split < 2; split++) {
+            Timing t;
+            auto out = gp.run(split == 1, data.data(), gids.data(), n, t);
+            double worst = 0;
+            for (uint32_t k = 0; k < G; k++) worst = std::max(worst, std::fabs(out[k] - cpu[k].get()) / absSum[k]);
+            bool ok = worst < 1e-9;
+            bad += !ok;
+            printf("%3u %-9s %12.2e %s\n", G, split ? "gpu" : "cpu", worst, ok ? "PASS" : "FAIL");
+        }
+        gp.shutdown();
+    }
+    return bad ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
     std::string mode = argc > 1 ? argv[1] : "accuracy";
+    if (mode == "groups") return groupsCheck();
     if (mode == "bench") return bench(argc > 2 ? atoi(argv[2]) : 1);
     return accuracy();
 }

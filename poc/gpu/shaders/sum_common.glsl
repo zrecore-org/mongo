@@ -7,6 +7,7 @@
 
 layout(local_size_x_id = 0) in;
 layout(constant_id = 1) const uint GROUPS = 1;
+const uint kMaxGroups = 16u;   // fixed array size: a spec-constant-sized local array gave wrong results on Metal (M1)
 
 layout(std430, binding = 1) readonly buffer Gid { uint gid[]; };
 layout(std430, binding = 2) writeonly buffer Out { vec2 part[]; };
@@ -19,7 +20,7 @@ shared uint shBad;
 const float kLo = 1e-30;
 const float kHi = 1e30;
 
-void reduceAndStore(vec2 acc[GROUPS], uint bad) {
+void reduceAndStore(vec2 acc[kMaxGroups], uint bad) {
     uint t = gl_LocalInvocationID.x;
     uint wgs = gl_WorkGroupSize.x;
     if (t == 0u) shBad = 0u;

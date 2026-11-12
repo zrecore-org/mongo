@@ -2,7 +2,7 @@
 #include "sum_common.glsl"
 layout(std430, binding = 0) readonly buffer In { vec2 x[]; };  // (hi, lo) float pairs, split on the CPU
 void main() {
-    vec2 acc[GROUPS];
+    vec2 acc[kMaxGroups];
     for (uint k = 0u; k < GROUPS; k++) acc[k] = vec2(0.0);
     uint bad = 0u;
     for (uint i = gl_GlobalInvocationID.x; i < pc.n; i += pc.stride) {
