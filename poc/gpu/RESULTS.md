@@ -363,10 +363,16 @@ Ported `rsel_hist` and `rsel_pick` to Slang (`slang/rsel.slang`, slangc 2026.20,
 - `precise` (what df64 needs): a Slang `precise float` chain of an add/sub (twoSum shape) gets `NoContraction` on all 6 operations; without
   `precise` it gets none. So the mechanism exists. The emitted decoration is the only thing checked: no df64 kernel was ported, so
   "df64 stays exact through Slang" is **not** verified, and neither is whether Metal honours it through MoltenVK (the GLSL path needed that check, POC 1).
+- df64 through Slang (`slang/df64_ops.slang`, `selftest.slang`, `df64.slang`, built by `slang/build_df64.sh`, run with `GPU_POC_DF64_DIR=build/slang ./run.sh poc8_selftest`):
+  on the M1 both variants (fma and Dekker no-fma) pass all 6 probes (fma, twoProd, double -> df64 split, df64 mul/div/sqrt), and the
+  worst-case errors equal the GLSL build's in every printed digit (split 0.0308, mul 0.186, div 0.109, sqrt 0.332, x 2^-44). The df64 operators
+  port 1:1 with `precise` on locals. Limit: the M1 also passes the GLSL build, and I have not shown that it would fail if `precise` were dropped, so this
+  does not prove Slang's `precise` is enough. The discriminating platform is lavapipe (its fma is not fused, and non-`precise` code failed there); that
+  needs a CI run and is not done.
 - Not measured: lavapipe, the T4, Slang's CPU target, Slang in the Bazel build, `-fp-mode precise` effects beyond the decoration check.
 - Reading for Phase 1: nothing here argues against Slang on code quality or speed, and nothing argues for it on speed. The decision is still
   about the build dependency (`slangc` in MongoDB's third-party tree) and the one-source-for-kernels-and-CPU-oracle benefit.
-  Smallest next check if Slang is a serious candidate: port `selftest.comp` (df64 known answers) and run it on the M1, lavapipe and the T4.
+  Smallest next check if Slang is a serious candidate: run the Slang self-test on lavapipe and the T4 (CI).
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).

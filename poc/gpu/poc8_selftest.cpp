@@ -12,7 +12,10 @@
 static void splitD(double d, float& hi, float& lo) { hi = (float)d; lo = (float)(d - (double)hi); }
 
 static int runTag(const std::string& tag) {
-    const std::string selftest = tag == "nofma" ? "build/shaders/selftest_nofma.spv" : "build/shaders/selftest.spv";
+    // GPU_POC_DF64_DIR=build/slang runs the Slang-compiled kernels (slang/build_df64.sh) instead of the GLSL ones
+    const char* envDir = getenv("GPU_POC_DF64_DIR");
+    const std::string dir = envDir ? envDir : "build/shaders";
+    const std::string selftest = dir + (tag == "nofma" ? "/selftest_nofma.spv" : "/selftest.spv");
     gpu::Ctx ctx;
     if (!ctx.init(gpu::defaultLoaderPaths())) { printf("no GPU: %s\n", ctx.error.c_str()); return 2; }
     printf("device=%s memory=%s variant=%s\n", ctx.props.deviceName, ctx.memMode(), tag.c_str());
@@ -65,7 +68,7 @@ static int runTag(const std::string& tag) {
     ctx.release(ks);
 
     // Probes 3-5: df64 mul/div/sqrt through the POC 1 kernel of the same variant.
-    auto k = ctx.makeKernel("build/shaders/df64_" + tag + ".spv", 3, 8);
+    auto k = ctx.makeKernel(dir + "/df64_" + tag + ".spv", 3, 8);
     std::vector<double> a(n), b(n);
     for (uint32_t i = 0; i < n; i++) { a[i] = mant() * std::ldexp(1.0, (int)(rng() % 21) - 10); if (rng() & 1) a[i] = -a[i]; b[i] = sgn() * mant() * std::ldexp(1.0, (int)(rng() % 21) - 10); }
     auto Bb = B;
