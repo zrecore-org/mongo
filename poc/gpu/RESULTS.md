@@ -230,7 +230,7 @@ Speedup of the GPU (PCIe included) over the CPU on the runner, sustained (warmed
 | radix sort, 64-bit keys | 3.5x | 4.0x | 2.9x | 3.5x | 3.9x |
 | radix sort, 32-bit keys | 5.4x | 6.2x | 4.9x | 6.0x | 6.6x |
 
-- **Cold (first query after the GPU idled) costs 1.5x to 2x more**: radix select at 4M took 11.0 ms cold against 6.0 ms
+- **Cold (first query after the GPU idled) costs more, by an amount that depends on the idle gap (POC 11: 1.6x after 2 s, 4.9x after 12 s)**; the figures here are for the short gaps of this benchmark: radix select at 4M took 11.0 ms cold against 6.0 ms
   sustained, and at 16M 34 ms against 23 ms. A server that sends the GPU sporadic work pays the idle-clock ramp; a
   busy one does not. Earlier T4 numbers (runs A and B above) mixed the two states and should not be quoted.
 - **`$sum` and `$stdDev` for one group keep a 4x to 7x gain over PCIe from about 256K values; with 16 groups they are
@@ -265,6 +265,39 @@ mean dwarfs the deviation; a plain double two-pass beats the GPU's df64 on that 
 splits exactly and the 0 error was an artifact.) Timing is in the table above: 5x to 7x for one group from 256K
 values, no gain for 16 groups. Like `$sum` it is not bit-identical to the CPU, so it is opt-in.
 
+## POC 11: pre-warming (`poc11_prewarm.cpp`, T4 runs 43174502364 and 43175298309)
+Radix select, 4M values, 3 ranks; each cell starts with 2 s of sustained load, then an idle gap, then one timed query
+(2 runs per cell; the clock and power are read from nvidia-smi right before the query).
+
+- **Startup warm-up:** pipeline creation costs 26 + 8 ms and the first query 9.5 ms against 6.2 ms for the second. A
+  dummy query at startup (the df64 self-test already runs kernels) pays the 3 ms once.
+- **Idle gap, no keep-alive:** the query slows as the gap grows, because the T4 drops its clocks and then enters a
+  deeper idle state:
+
+| gap | query ms | SM clock | power before the query |
+|---|---|---|---|
+| 0 s | 6.5 | 1590 MHz | 49 to 51 W |
+| 0.5 s | 6.9 to 7.4 | 1590 MHz | 33 W |
+| 2 s | 10.2 | 360 MHz | 26 W |
+| 5 s | 15.8 to 16.0 | 300 MHz | 25 W |
+| 12 s | 31.8 | 300 MHz | 13 W |
+
+  After 12 s idle the query takes 4.9x longer than at full clocks (still about 2x faster than the CPU's 66 ms at
+  this size). The SM clock is the same at 5 s and 12 s, so the extra slowdown comes from a deeper idle state
+  (lower power) that nvidia-smi's SM clock does not show; the cause is not identified.
+- **A heartbeat does not help:** a tiny dispatch every 20 ms during the gap gave the same times and the same
+  clocks as idling (30 W and the same slow queries). The driver ignores that little load.
+- **Locking the clocks works:** `sudo nvidia-smi -lgc 1590,1590` (allowed on the hosted runner) removes the penalty:
+  the query after 12 s idle took 6.75 to 6.94 ms, against 31.8 ms unlocked. The price is idle power: about 37 to 38 W
+  with the clocks held, against 13 to 25 W unlocked idle (and 50 to 53 W under load; the T4's limit is 70 W).
+  Memory clocks and PCIe link state were not locked. This is an operator setting, not something the server can
+  or should change by itself.
+- **Design implication:** the GPU path should track how long the GPU has been idle. After a gap of a few seconds,
+  raise the minimum batch size or use the CPU, unless the operator has locked the clocks. The cold penalty is gap
+  dependent (1.6x at 2 s, 2.5x at 5 s, 4.9x at 12 s), so the earlier "1.5x to 2x" figure only holds for short gaps.
+  Not measured: other GPUs (the M1 was not tested, Apple GPUs may ramp faster), and how real query arrival patterns
+  fall across these gaps.
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 1M for `$sum` with several groups), with the CPU path as automatic fallback (POC 4)
@@ -272,8 +305,11 @@ values, no gain for 16 groups. Like `$sum` it is not bit-identical to the CPU, s
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
 - Discrete GPU (T4, PCIe included): `$sum` and `$stdDev` for few groups keep a 3x to 7x gain, radix sort is about
-  3x to 4x and radix select 6x to 12x at 256K and above, at sustained clocks (a cold first query costs 1.5x to 2x
-  more on the T4). The df64 startup self-test picks the variant (fma, or Dekker without fma on lavapipe).
+  3x to 4x and radix select 6x to 12x at 256K and above, at sustained clocks (a cold first query costs 1.6x to 4.9x
+  more on the T4 depending on the idle gap; POC 11). The df64 startup self-test picks the variant (fma, or Dekker without fma on lavapipe).
+- GPU idle policy (POC 11): a software heartbeat does not keep the T4 warm; either the operator locks the clocks
+  (`nvidia-smi -lgc`, about +13 to +25 W idle) or the GPU path becomes idle-aware (raise the batch threshold or use
+  the CPU after a few seconds idle).
 - Not measured: other discrete GPUs, Windows/Linux AMD, PCIe 4/5 hosts.
 
 ## POC 4: failure handling: PASS (12/12, no GPU)
