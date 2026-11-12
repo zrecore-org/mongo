@@ -81,6 +81,12 @@ The CPU reference is a port of `DoubleDoubleSummation::addDouble` (`src/mongo/ut
 | 4M | 27.7 | 8.9 | 3.1x | 9.71 | 5.10 | 1.9x |
 | 16M | 110.4 | 17.5 | 6.3x | 40.7 | 21.4 | 1.9x |
 
+- **Negative result for many groups** (same machine, GPU-side split): the GPU never beats CPU `$sum` at
+  G=256 (0.87-0.90x at 16M, 0.62-0.73x at 1M) or G=4096 (0.54-0.57x at 16M, 0.35-0.38x at 1M). CPU
+  double-double speeds up with G (16M: 110 ms at G=1, 18 ms at 256) because independent accumulators break
+  the serial dependency chain, while the GPU combine step grows with G (11.9 ms at G=4096, 16M). So GPU
+  `$sum` only wins for few groups (about 16 or fewer).
+
 - Break-even about 64K elements for one group, about 256K to 1M for 16 groups. Plain `double` summation on
   the CPU is 4 ms at 16M, faster than the GPU, so the GPU only beats the double-double CPU path.
 - There is a fixed cost of about 0.3 to 0.4 ms per dispatch. A discrete GPU would add a PCIe transfer
@@ -103,10 +109,9 @@ Break-even about 64K. Numeric results equal the CPU's (radix select returns an i
 ## Phase 1 go/no-go: conditional go
 - Go only as opt-in, for batches of at least 256K elements, with the CPU path as automatic fallback (POC 4)
   and a startup known-answer self-test (POC 1: `precise` on every df64 op is mandatory).
-- `$sum` on the GPU is not bit-identical to the CPU, so it must not be on by default; selection and
+- `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
-- Not measured: a discrete GPU with PCIe transfer, Linux/CUDA-class drivers, and `$sum` with many groups
-  above 16.
+- Not measured: a discrete GPU with PCIe transfer, Linux/CUDA-class drivers, .
 ## POC 4: failure handling: PASS (12/12, no GPU)
 Mock device with injected device-lost, OOM and timeout (with partial output written before failing).
 Whole-batch CPU rerun returns the correct result every time; the breaker opens after 3 consecutive
