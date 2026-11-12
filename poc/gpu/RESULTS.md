@@ -181,28 +181,53 @@ MoltenVK/Metal. Correctness only; no timing.
   20000 `mul` cases and thousands of `div`/`sqrt` cases are wrong and **not flagged by the in-shader range
   preflight**. Likely cause (not verified): the `fma` used to recover the product's rounding error is not
   executed as a fused operation, so the error term comes out zero.
-- POC 2 `$sum` on lavapipe: the df64 sum is up to 42316 ulp from CPU `$sum`, worse than naive double (9212
-  ulp), so the GPU path would be less accurate than plain double there. The fallback flag still works
-  (1e300, NaN, denormal set it).
+- **Retracted (see the T4 section):** an earlier version of this note said the POC 2 `$sum` result on lavapipe
+  (up to 42316 ulp from CPU `$sum`, worse than naive double) showed lavapipe degrading df64 sums. It does not:
+  the real NVIDIA T4, whose df64 is correct, gives exactly the same numbers. The difference from the Mac run
+  comes from the test data, which `std::normal_distribution` generates differently with libstdc++ than with
+  libc++, so the ulp figures are only comparable within one platform. The fallback flag works on lavapipe
+  (1e300, NaN, denormal set it). The df64 `mul`/`div`/`sqrt` kernel failure on lavapipe stands: it is
+  measured against an exact oracle and does not depend on the data generator.
 - **Consequence for the design:** a driver can pass every range check and still compute df64 wrongly. The
   startup known-answer self-test (a `mul`/`div`/`sqrt`/`fma` check against exact values) is therefore a
   hard requirement, not an optional extra, and a failed test must disable GPU `$sum` and anything else using
   df64. Selection and sort use only integer ops and are unaffected.
 
-## NVIDIA Tesla T4 (GitHub-hosted `gpu-t4` runner, run 43163593526): first, partial run
-Ubuntu 24.04, driver 590.48.01, 16 GiB, Vulkan through `nvidia_icd.json`. First run of the T4 job; it stopped
-at POC 7, so this is not a result set yet.
+## NVIDIA Tesla T4: a discrete GPU over PCIe (GitHub-hosted `gpu-t4` runner, run 43164462049)
+Ubuntu 24.04, driver 590.48.01, 16 GiB, 4 vCPU host. Vulkan through `nvidia_icd.json`. The harness identifies a
+discrete GPU by device type and uses device-local buffers with staging copies inside the timed submission, so the
+PCIe transfer is included in every "GPU" time below. CPU baselines are the runner's 4 vCPUs, so speedups compare
+the T4 with that CPU, not with the M1. The first T4 run (43163593526) was invalid: the harness mistook the T4's
+small host-visible VRAM window (PCIe BAR) for unified memory, ran no staging copies, and POC 7 ran out of
+device memory. That is fixed.
 
-- **Correct on a real discrete NVIDIA GPU:** df64 (POC 1: add/mul/div/sqrt kernel errors 0.1 to 0.6 x 2^-44, the
-  same as Metal; `fma` is fused and `twoProd` exact), the GPU-side double -> df64 split, radix select 63/63, and
-  POC 4. The df64 failure seen on lavapipe does not occur on NVIDIA.
-- **The timings from this run are not valid.** The harness reported `memory=unified` because the T4 exposes a
-  small host-visible window of VRAM (the PCIe BAR), which it mistook for unified memory. No staging copies ran,
-  uploads went through the BAR window (47 ms for 128 MB), and POC 7 then failed in `vkAllocateMemory` (out of
-  device memory) on the large buffers. Fixed afterwards: a discrete GPU is now identified by device type and uses
-  device-local buffers with staging copies inside the timed submission. A new run is needed.
-- The POC 8 self-test passed every probe except `sqrt`, whose test inputs were signed while the kernel returns 0 for
-  negative input (a test bug, fixed; the M1 now passes 6/6).
+**Correctness on a real discrete NVIDIA GPU:** df64 add/mul/div/sqrt kernel errors 0.1 to 0.6 x 2^-44 (POC 1
+passes, `fma` is fused), the GPU-side double -> df64 split, POC 8 self-test 6/6 on both variants (see below),
+radix select 63/63, radix sort 32/32 permutations, POC 4. The df64 failure of lavapipe does not occur here.
+
+| workload | 64K | 256K | 1M | 4M | 16M |
+|---|---|---|---|---|---|
+| `$sum`, 1 group, GPU split | 2.7x | 4.5x | 5.2x | 5.2x | 5.4x |
+| `$sum`, 16 groups, GPU split | 0.54x | 0.81x | 0.89x | 0.88x | 1.10x |
+| radix select, 3 ranks | 1.9x | 4.7x | 5.8x | 2.2x | 2.5x |
+| radix sort, 64-bit keys | 1.3x | 1.7x | 2.0x | 1.7x | 1.9x |
+| radix sort, 32-bit keys | 2.1x | 2.7x | 2.1x | 2.7x | 2.4x |
+
+- **`$sum` holds up over PCIe:** 4x to 5.4x for one group, still about break-even for 16 groups. The
+  conclusions from the M1 carry over; the few-groups limit is not an Apple-specific artifact.
+- **Radix select scales badly past 1M on the T4 (unexplained):** 2.1 ms of GPU time at 1M becomes 28.8 ms at 4M
+  and 104 ms at 16M, about 13x for 4x the data, though the same kernel scaled linearly on the M1. The PCIe
+  copy is 9 ms at 16M, so the kernel is the cost. I have not found the cause.
+- **The radix sort does not transfer well to the T4:** about 2x against 3.5x to 5x on the M1. At 16M, 805 ms of
+  GPU time is about 50 ms per pass, where memory bandwidth alone would allow about 1 to 2 ms. The kernel gives
+  each thread 16 consecutive keys, so neighbouring lanes read far apart (uncoalesced), which a unified-memory
+  Apple GPU tolerates and an NVIDIA GPU does not. This is a hypothesis, not a measurement. These numbers describe
+  an unoptimized kernel, not a limit of the hardware.
+- **POC 8 df64 self-test:** passes all six probes on the T4 and the M1 (the earlier `sqrt` failure was a bug in
+  the test's inputs). The no-`fma` variant is as accurate as the `fma` one, so it can serve drivers whose `fma`
+  is not fused if lavapipe turns out to be one (not yet checked on lavapipe).
+- `$sum` accuracy on the T4 equals the lavapipe numbers exactly, which is how the earlier lavapipe claim was
+  caught (see the retraction above).
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
@@ -210,7 +235,10 @@ at POC 7, so this is not a result set yet.
   and a startup known-answer self-test that gates df64 use (POC 1 and lavapipe above: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
-- Not measured: a discrete GPU with PCIe transfer, Linux/CUDA-class drivers.
+- Discrete GPU (T4, PCIe included): `$sum` for few groups keeps a 4x to 5x gain. Radix select (2x to 6x) and
+  radix sort (about 2x) gained less than on the M1 and need kernel work (coalescing, scaling past 1M) before
+  their M1 numbers can be quoted for discrete GPUs.
+- Not measured: other discrete GPUs, Windows/Linux AMD, PCIe 4/5 hosts.
 
 ## POC 4: failure handling: PASS (12/12, no GPU)
 Mock device with injected device-lost, OOM and timeout (with partial output written before failing).

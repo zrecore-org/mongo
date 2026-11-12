@@ -155,7 +155,8 @@ jobs:
   nvidia-t4:
     name: NVIDIA Tesla T4 (hosted GPU runner, billed)
     needs: linux-lavapipe
-    if: github.event_name != 'workflow_dispatch' || inputs.nvidia_gpu
+    # Billed: a commit message containing [skip gpu] runs only the free lavapipe job.
+    if: (github.event_name != 'workflow_dispatch' || inputs.nvidia_gpu) && !contains(github.event.head_commit.message, '[skip gpu]')
     runs-on: gpu-t4
     timeout-minutes: 45
     steps:
