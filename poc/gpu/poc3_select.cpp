@@ -76,21 +76,23 @@ int main(int argc, char** argv) {
     for (size_t n = 1024; n <= maxN; n *= 4) {
         int reps = n <= (1u << 20) ? 11 : 5;
         std::vector<uint32_t> ranks = {(uint32_t)(n / 2), (uint32_t)(n * 9 / 10), (uint32_t)(n * 99 / 100)};
-        std::vector<double> tn, ts, tg, tu, tk, tr;
+        std::vector<double> tn, ts, tg, tu, tk, tr, tw;
         for (int r = -2; r < reps; r++) {
             auto c = std::vector<double>(data.begin(), data.begin() + n);
             double a = gpu::nowMs();
             for (uint32_t k : ranks) std::nth_element(c.begin(), c.begin() + k, c.end());
             double b = gpu::nowMs();
             double tt[3];
-            g.select(data.data(), n, ranks, tt);
+            g.select(data.data(), n, ranks, tt);   // cold: right after the long CPU baselines above, the GPU may have idled
+            double warm[3]; for (int w = 0; w < 3; w++) g.select(data.data(), n, ranks, warm);   // warm: back to back
+            if (r >= 0) tw.push_back(warm[0] + warm[1] + warm[2]);
             double sortMs = 0;
             if (n <= (4u << 20)) { auto c2 = std::vector<double>(data.begin(), data.begin() + n); double s0 = gpu::nowMs(); std::sort(c2.begin(), c2.end()); sortMs = gpu::nowMs() - s0; }
             if (r < 0) continue;
             tn.push_back(b - a); ts.push_back(sortMs); tg.push_back(tt[0] + tt[1] + tt[2]); tu.push_back(tt[0]); tk.push_back(tt[1]); tr.push_back(tt[2]);
         }
         double nth = median(tn), srt = median(ts), gt = median(tg);
-        printf("%10zu | %10.3f %10.3f | %9.3f (%.2f/%.2f/%.2f) | %6.1fx %s\n", n, nth, srt, gt, median(tu), median(tk), median(tr), nth / gt,
+        printf("%10zu | %10.3f %10.3f | %9.3f (%.2f/%.2f/%.2f) warm %.3f | %6.1fx %s\n", n, nth, srt, gt, median(tu), median(tk), median(tr), median(tw), nth / gt,
                srt > 0 ? (std::to_string(srt / gt).substr(0, 6) + "x").c_str() : "-");
         char line[256]; snprintf(line, sizeof line, "%zu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", n, nth, srt, gt, median(tu), median(tk), median(tr)); csv += line;
     }

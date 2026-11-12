@@ -108,7 +108,7 @@ int main() {
     // Accuracy: relative error of the standard deviation against the oracle, three data shapes, 1M values, 1 group.
     printf("accuracy (relative error of stdDevPop vs oracle, n=1M):\n%-34s %12s %12s %12s\n", "data", "CPU Welford", "naive 2-pass", "GPU df64");
     struct Shape { const char* name; double mean, sd; bool mixed; };
-    for (Shape sh : {Shape{"mean 0, sd 1", 0, 1, false}, Shape{"mean 1e6, sd 1", 1e6, 1, false}, Shape{"mean 1e9, sd 1e-2", 1e9, 1e-2, false}, Shape{"mixed magnitude 1e-3..1e3", 0, 1, true}}) {
+    for (Shape sh : {Shape{"mean 0, sd 1", 0, 1, false}, Shape{"mean 1e6+0.3, sd 1", 1e6 + 0.3, 1, false}, Shape{"mean 123456789.123, sd 1e-2", 123456789.123, 1e-2, false}, Shape{"mean 1e9+0.7, sd 1e-2", 1e9 + 0.7, 1e-2, false}, Shape{"mixed magnitude 1e-3..1e3", 0, 1, true}}) {
         size_t n = 1u << 20; std::vector<double> v(n);
         for (auto& x : v) x = sh.mean + (sh.mixed ? nd(rng) * std::pow(10.0, std::uniform_real_distribution<double>(-3, 3)(rng)) : sh.sd * nd(rng));
         auto ref = cpuTwoPass(v.data(), nullptr, n, 1, true)[0];

@@ -217,6 +217,15 @@ struct Ctx {
                         unifiedMemory = true;
                         ok = true;
                     }
+            // Staging buffers are read back by the host, so prefer cached system memory: reading uncached
+            // (write-combined) memory is extremely slow and would be counted as GPU time.
+            if (discrete)
+                for (uint32_t i = 0; i < mp.memoryTypeCount && !ok; i++)
+                    if ((mp.memoryTypes[i].propertyFlags & (want | VK_MEMORY_PROPERTY_HOST_CACHED_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) ==
+                        (want | VK_MEMORY_PROPERTY_HOST_CACHED_BIT)) {
+                        memType = i;
+                        ok = true;
+                    }
             for (uint32_t i = 0; i < mp.memoryTypeCount && !ok; i++)  // system memory first on a discrete GPU
                 if ((mp.memoryTypes[i].propertyFlags & (want | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) == want) {
                     memType = i;
