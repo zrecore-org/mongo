@@ -106,6 +106,32 @@ Correct 63/63 against `std::nth_element` after fixing a shared array sized by a 
 
 Break-even about 64K. Numeric results equal the CPU's (radix select returns an input element).
 
+## POC 3b: percentile end to end (`poc3b_percentile.cpp`, `out/poc3b_session.log`)
+Mirrors `percentile_algo_accurate.cpp` (one `std::nth_element` per p on the same vector) and
+`percentile_algo_continuous.cpp` (`std::partial_sort` per p, then interpolate). Input is already a contiguous
+`std::vector<double>`, so there is no gather. 0 mismatches: GPU values and interpolated results are
+bit-identical to the CPU's. Median of 3-7 reps, ms. GPU numbers are conservative: ranks run in fixed chunks
+of 16, so P=1 pays for 16 ranks of work.
+
+| operator | P | 64K | 256K | 1M | 4M | 16M |
+|---|---|---|---|---|---|---|
+| discrete | 1 | 0.5x | 1.3x | 3.1x | 3.2x | 3.6x |
+| discrete | 3 | 1.0x | 1.9x | 3.3x | 3.6x | 4.8x |
+| discrete | 7 | 1.4x | 2.9x | 4.0x | 5.0x | 7.3x |
+| discrete | 20 | 1.0x | 2.8x | 3.5x | 5.6x | 7.2x |
+| continuous | 1 | 2.3x | 6.2x | 8.5x | 27x | 75x |
+| continuous | 3 | 6.2x | 10.8x | 24x | 60x | 151x |
+
+(Continuous P=7 and 20 reach 10-107x; omitted here, see the log.)
+
+Finding that changes the picture: the continuous CPU path is slow because of `std::partial_sort`, not
+because of the data size. POC 6 (`poc6_continuous_cpu.cpp`, CPU only) shows `std::nth_element` at the ceil
+rank plus `std::max_element` over the lower part gives bit-identical results 12x (1M) to 27x (16M) faster
+(P=3: 195 -> 16.5 ms at 1M, 7177 -> 269 ms at 16M). Against that fixed CPU path the GPU is about 2x at 1M and 5.5x at
+16M (P=3), in line with the discrete numbers. **The CPU fix should land first and needs no GPU.**
+Earlier fixes: the `rsel_hist.comp` shared array held only 8 ranks, so runs above 8 ranks wrote out of
+bounds (NaN results); it is now 16 and larger rank sets run in chunks.
+
 ## POC 5: batch assembly cost (`poc5_gather.cpp`, CPU only, no GPU)
 Gather of scattered 1000-double blocks into one contiguous staging buffer (best of 20, warm cache, so a
 lower bound; it excludes BSONColumn decode, which would be needed either way):
@@ -123,6 +149,7 @@ Assembly is not a deal-breaker but pushes the G=16 break-even to about 1M elemen
 the shader reads blocks in place (unified memory only); not measured.
 
 ## Phase 1 go/no-go: conditional go
+- Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 1M for `$sum` with several groups), with the CPU path as automatic fallback (POC 4)
   and a startup known-answer self-test (POC 1: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and

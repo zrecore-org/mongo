@@ -3,7 +3,7 @@
 layout(local_size_x = 256) in;
 layout(std430, binding = 0) readonly buffer In { uvec2 x[]; };
 #include "rsel_common.glsl"
-const uint kMaxR = 8u;               // fixed size: a spec-constant-sized threadgroup array is not safe on Metal
+const uint kMaxR = 16u;               // fixed size: a spec-constant-sized threadgroup array is not safe on Metal
 shared uint sh[kMaxR * 256u];
 void main() {
     uint t = gl_LocalInvocationID.x;
