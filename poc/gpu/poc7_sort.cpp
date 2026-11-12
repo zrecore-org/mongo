@@ -104,16 +104,23 @@ int main(int argc, char** argv) {
         std::vector<Rec> recs(n), outr(n); for (size_t i = 0; i < n; i++) recs[i].w[0] = i;
         std::vector<std::pair<uint64_t, uint32_t>> base(n);
         for (size_t i = 0; i < n; i++) base[i] = {data[i], (uint32_t)i};
-        for (int r = -1; r < reps; r++) {
+        for (int r = -1; r < reps; r++) {   // phase 1: CPU baseline only
             auto c = base;
             double a = gpu::nowMs();
             std::sort(c.begin(), c.end());
             double b = gpu::nowMs();
-            double t[3]; auto perm = g.sort(data.data(), n, 64, t);
-            double pa = gpu::nowMs(); for (size_t i = 0; i < n; i++) outr[i] = recs[perm[i]]; double pb = gpu::nowMs(); sink = sink + outr[n / 2].w[0] + outr[n - 1].w[0];
-            double u[3]; g.sort(data.data(), n, 32, u);
-            if (r < 0) continue;
-            tc.push_back(b - a); t64.push_back(t[0] + t[1] + t[2]); tg64.push_back(t[1]); tu64.push_back(t[0]); tr64.push_back(t[2]); tp.push_back(pb - pa); t32.push_back(u[0] + u[1] + u[2]);
+            if (r >= 0) tc.push_back(b - a);
+        }
+        gpu::warmup([&] { double t[3]; g.sort(data.data(), n, 64, t); });   // phase 2: GPU only, after a warm-up
+        std::vector<uint32_t> perm;
+        for (int r = 0; r < reps; r++) {
+            double t[3]; perm = g.sort(data.data(), n, 64, t);
+            t64.push_back(t[0] + t[1] + t[2]); tg64.push_back(t[1]); tu64.push_back(t[0]); tr64.push_back(t[2]);
+        }
+        for (int r = 0; r < reps; r++) { double u[3]; g.sort(data.data(), n, 32, u); t32.push_back(u[0] + u[1] + u[2]); }
+        for (int r = 0; r < 3; r++) {       // CPU reordering by the permutation, measured separately
+            double pa = gpu::nowMs(); for (size_t i = 0; i < n; i++) outr[i] = recs[perm[i]]; double pb = gpu::nowMs();
+            sink = sink + outr[n / 2].w[0] + outr[n - 1].w[0]; tp.push_back(pb - pa);
         }
         double c = med(tc), g64 = med(t64), g32 = med(t32);
         printf("%10zu | %9.2f | %9.2f | %6.1fx | %9.2f | %6.1fx | reorder 32B recs: %.1f ms | 64-bit split: host upload %.1f, GPU %.1f, host readback %.1f\n", n, c, g64, c / g64, g32, c / g32, med(tp), med(tu64), med(tg64), med(tr64));

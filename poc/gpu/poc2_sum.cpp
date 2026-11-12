@@ -157,14 +157,16 @@ static int bench(uint32_t G) {
         int reps = n <= (1u << 20) ? 15 : 7;
         std::vector<double> tdd, tnv, tcs, tgs, pcs, gcs, ccs, pgs, ggs, cgs;
         std::vector<DD> o1; std::vector<double> o2;
-        for (int r = -2; r < reps; r++) {  // two warmups
+        for (int r = -1; r < reps; r++) {   // phase 1: CPU baselines only
             double a = gpu::nowMs(); cpuDd(data.data(), gids.data(), G, n, o1); double b = gpu::nowMs();
             cpuNaive(data.data(), gids.data(), G, n, o2); double c = gpu::nowMs();
+            if (r >= 0) { tdd.push_back(b - a); tnv.push_back(c - b); }
+        }
+        gpu::warmup([&] { Timing t; gp.run(true, data.data(), gids.data(), n, t); });   // phase 2: GPU only, after a warm-up
+        for (int r = 0; r < reps; r++) {
             Timing t1, t2;
             gp.run(false, data.data(), gids.data(), n, t1);
             gp.run(true, data.data(), gids.data(), n, t2);
-            if (r < 0) continue;
-            tdd.push_back(b - a); tnv.push_back(c - b);
             tcs.push_back(t1.prep + t1.gpu + t1.combine); pcs.push_back(t1.prep); gcs.push_back(t1.gpu); ccs.push_back(t1.combine);
             tgs.push_back(t2.prep + t2.gpu + t2.combine); pgs.push_back(t2.prep); ggs.push_back(t2.gpu); cgs.push_back(t2.combine);
         }

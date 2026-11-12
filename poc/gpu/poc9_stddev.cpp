@@ -130,14 +130,15 @@ int main() {
         for (size_t n = 1024; n <= maxN; n *= 4) {
             int reps = n <= (1u << 20) ? 9 : 5;
             std::vector<double> tc, tg;
-            for (int r = -1; r < reps; r++) {
-                double a = gpu::nowMs(); auto w = cpuWelford(data.data(), gids.data(), n, G); double b = gpu::nowMs();
-                std::vector<double> m2; std::vector<uint64_t> c; bool fb;
-                g.run(data.data(), gids.data(), n, m2, c, fb); double d = gpu::nowMs();
-                if (r < 0) continue;
-                tc.push_back(b - a); tg.push_back(d - b);
-                if (r == 0 && w[0] > 0 && std::fabs(std::sqrt(m2[0]) - std::sqrt(w[0])) / std::sqrt(w[0]) > 1e-6) printf("  (G=%u n=%zu: GPU and CPU stdDev differ by %.2e relative)\n", G, n, std::fabs(std::sqrt(m2[0]) - std::sqrt(w[0])) / std::sqrt(w[0]));
+            std::vector<double> wref;
+            for (int r = -1; r < reps; r++) {   // phase 1: CPU baseline only
+                double a = gpu::nowMs(); wref = cpuWelford(data.data(), gids.data(), n, G); double b = gpu::nowMs();
+                if (r >= 0) tc.push_back(b - a);
             }
+            std::vector<double> m2; std::vector<uint64_t> c; bool fb;
+            gpu::warmup([&] { g.run(data.data(), gids.data(), n, m2, c, fb); });   // phase 2: GPU only, after a warm-up
+            for (int r = 0; r < reps; r++) { double d0 = gpu::nowMs(); g.run(data.data(), gids.data(), n, m2, c, fb); tg.push_back(gpu::nowMs() - d0); }
+            if (wref[0] > 0 && std::fabs(std::sqrt(m2[0]) - std::sqrt(wref[0])) / std::sqrt(wref[0]) > 1e-6) printf("  (G=%u n=%zu: GPU and CPU stdDev differ by %.2e relative)\n", G, n, std::fabs(std::sqrt(m2[0]) - std::sqrt(wref[0])) / std::sqrt(wref[0]));
             printf("%3u %10zu | %10.3f | %10.3f | %6.2fx\n", G, n, med(tc), med(tg), med(tc) / med(tg));
             char line[100]; snprintf(line, sizeof line, "%u,%zu,%.4f,%.4f\n", G, n, med(tc), med(tg)); csv += line;
         }

@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -502,6 +503,14 @@ inline std::vector<std::string> defaultLoaderPaths() {
              "libvulkan.so.1", "libvulkan.so", "vulkan-1.dll"};
     }
     return v;
+}
+
+// Runs fn repeatedly for `ms` so a GPU that idled reaches its working clocks before anything is timed (a hosted T4
+// idles at 300 MHz and needs about 10 s of load to reach 1590 MHz). Benchmarks run all CPU baselines first and then
+// the GPU measurements back to back after this warm-up; a single "cold" sample is reported separately.
+inline void warmup(const std::function<void()>& fn, double ms = 1500) {
+    double t0 = nowMs();
+    while (nowMs() - t0 < ms) fn();
 }
 
 }  // namespace gpu
