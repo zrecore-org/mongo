@@ -10,8 +10,13 @@ is wired into `src/`. Plan: `.claude/planning/vulkan-gpu.md`. Measurements, nega
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release     # defaults to ~/VulkanSDK/1.3.283.0/macOS
 cmake --build build
 mkdir -p out && ./run.sh poc3_select               # run.sh points the loader at MoltenVK unless VK_ICD_FILENAMES is set
-tools/with_gpu_lock.sh ./run.sh poc7_sort          # this machine shares its GPU; see the note on pg-strom below
 ```
+
+`tools/with_gpu_lock.sh` is **optional**. It is a local-development convenience for one machine whose GPU is
+shared with another project (`tools/with_gpu_lock.sh ./run.sh poc7_sort` runs a command while holding the
+machine's GPU lock). Nothing needs it to build or run the POCs, CI does not use it except on the manual
+self-hosted `apple-gpu` job, and it is not intended to be shipped or moved under `src/`. Skip it on any
+machine whose GPU you do not share.
 
 CI (`.github/workflows/gpu-poc.yml`) builds and runs the correctness checks on lavapipe. It has no GPU, so it
 says nothing about speed.
@@ -61,6 +66,9 @@ The algorithms here were implemented for this project from the published descrip
 | LSD counting radix sort / radix select | `poc3_select` (MSD byte-wise radix select) and `poc7_sort` (4-bit LSD sort with per-block histograms and a global scan). These are textbook techniques; no specific implementation was followed. | n/a |
 
 ### Design inspiration from pg-strom
+
+The lock tool described here is an optional local-development helper only (see the top of this file); it is
+not part of the proofs of concept and will not ship.
 
 | Project | What was borrowed | License | Link |
 |---|---|---|---|
