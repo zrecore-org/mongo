@@ -1,6 +1,6 @@
 #!/bin/sh
 # Run a command while holding the machine's shared GPU test lock, using the same protocol as
-# pg-strom's test/gpuserv/locked_test.sh (fair ticket queue in $LOCK.queue, lock directory $LOCK with
+# the vulkan-gpu fork of pg-strom's test/gpuserv/locked_test.sh (fair ticket queue in $LOCK.queue, lock directory $LOCK with
 # pid/lstart/tree/start/beat files, a heartbeat every minute, stale owners taken over), so the POC
 # benchmarks never overlap PG-Strom's GPU work. It does NOT build or install anything.
 #   tools/with_gpu_lock.sh <command> [args...]        (PGSTROM_TEST_LOCK overrides the lock path, for testing)

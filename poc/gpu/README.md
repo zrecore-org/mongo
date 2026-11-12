@@ -19,7 +19,7 @@ says nothing about speed.
 ## Credits and third-party software
 
 Everything below is used as an unmodified tool, header or reference. The one exception is
-`tools/with_gpu_lock.sh`, which is adapted from pg-strom (see the last table). Licenses are as published by each project; check them before
+`tools/with_gpu_lock.sh`, which is adapted from the `vulkan-gpu` fork of pg-strom (see the last table). Licenses are as published by each project; check them before
 redistributing anything.
 
 ### The code under study
@@ -64,7 +64,7 @@ The algorithms here were implemented for this project from the published descrip
 
 | Project | What was borrowed | License | Link |
 |---|---|---|---|
-| PG-Strom (KaiGai Kohei, HeteroDB) | The shared-GPU lock protocol in `tools/with_gpu_lock.sh` (queue and heartbeat files, same paths) is a shortened script adapted from pg-strom's `test/gpuserv/locked_test.sh` (it follows the same protocol and shares some lines with it), so the two projects never run on the GPU at the same time. `.github/workflows/gpu-poc.yml` is modelled on pg-strom's `vulkan-check.yml` (lavapipe on hosted runners, self-hosted Apple Silicon for real GPU tests). The local checkout is a fork, `zrecore-org/pg-strom`; the upstream project is credited here. | PostgreSQL License | <https://github.com/heterodb/pg-strom> |
+| `vulkan-gpu` branch of pg-strom (`zrecore-org/pg-strom`, a hard fork of KaiGai Kohei / HeteroDB's PG-Strom; the author of this repo's own fork) | The shared-GPU lock protocol in `tools/with_gpu_lock.sh` (queue and heartbeat files, same paths) is a shortened script adapted from that fork's `test/gpuserv/locked_test.sh`, which exists only in the fork, not in upstream PG-Strom (it follows the same protocol and shares some lines with it), so the two projects never run on the GPU at the same time. `.github/workflows/gpu-poc.yml` is modelled on pg-strom's `vulkan-check.yml` (lavapipe on hosted runners, self-hosted Apple Silicon for real GPU tests). The fork is based on upstream PG-Strom (KaiGai Kohei, HeteroDB, PostgreSQL License, <https://github.com/heterodb/pg-strom>), which is credited as the original project. | PostgreSQL License | <https://github.com/zrecore-org/pg-strom> |
 
 ## License of this directory
 
