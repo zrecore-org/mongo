@@ -347,7 +347,7 @@ hand it to the GPU as a buffer instead of copying scattered blocks into a Vulkan
 | 4096 (4M) | 10.3 | 8.1 | 7.1 |
 | 16384 (16M) | 33.9 | 23.0 | 17.7 |
 
-Importing saves 2% to 12% up to 1M values and 21% to 32% at 4M to 16M; reusing a pooled arena saves 11% to 31% and 48% at
+Importing saves 2% to 12% up to 1M values and 21% to 32% at 4M to 16M; reusing a pooled arena saves 12% to 31% and 48% at
 16M. It needs the engine to decode into page-aligned arena memory (16 KB pages on the M1) and a pool of imported
 arenas to avoid the per-batch import cost. Only measured on the M1; on a discrete GPU importing host memory means
 reading it over PCIe, so this is a unified-memory (Apple, integrated) optimization.
