@@ -169,10 +169,30 @@ Adding it to the GPU `$sum` totals (GPU-side split): 1M, G=1: 1.84 ms vs CPU 6.9
 Assembly is not a deal-breaker but pushes the G=16 break-even to about 1M elements. Gathering is skipped if
 the shader reads blocks in place (unified memory only); not measured.
 
+## Second implementation: lavapipe in CI (GitHub Actions run 43159891689, x86_64 and aarch64, llvmpipe LLVM 20.1.2)
+CI runs the POCs on Mesa's CPU Vulkan driver, a different SPIR-V compiler and arithmetic implementation from
+MoltenVK/Metal. Correctness only; no timing.
+
+- Pass on both architectures: POC 4 (12/12), POC 3 radix select (63/63), POC 7 radix sort (32/32). The
+  integer-only kernels give the same answers on two independent implementations.
+- **df64 fails on lavapipe**, on both architectures: `add` is correct (kernel error 0.11 x 2^-44) but `mul`,
+  `div` and `sqrt` are off by about 5e5 to 1e6 x 2^-44 (and `mul` on huge inputs returns NaN for half the cases).
+  That is about float32 precision, as if the low word were lost. `verify_df64.py` reports FAIL: 10000 of
+  20000 `mul` cases and thousands of `div`/`sqrt` cases are wrong and **not flagged by the in-shader range
+  preflight**. Likely cause (not verified): the `fma` used to recover the product's rounding error is not
+  executed as a fused operation, so the error term comes out zero.
+- POC 2 `$sum` on lavapipe: the df64 sum is up to 42316 ulp from CPU `$sum`, worse than naive double (9212
+  ulp), so the GPU path would be less accurate than plain double there. The fallback flag still works
+  (1e300, NaN, denormal set it).
+- **Consequence for the design:** a driver can pass every range check and still compute df64 wrongly. The
+  startup known-answer self-test (a `mul`/`div`/`sqrt`/`fma` check against exact values) is therefore a
+  hard requirement, not an optional extra, and a failed test must disable GPU `$sum` and anything else using
+  df64. Selection and sort use only integer ops and are unaffected.
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 1M for `$sum` with several groups), with the CPU path as automatic fallback (POC 4)
-  and a startup known-answer self-test (POC 1: `precise` on every df64 op is mandatory).
+  and a startup known-answer self-test that gates df64 use (POC 1 and lavapipe above: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
 - Not measured: a discrete GPU with PCIe transfer, Linux/CUDA-class drivers.
