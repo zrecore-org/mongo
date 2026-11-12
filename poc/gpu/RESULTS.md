@@ -193,45 +193,73 @@ MoltenVK/Metal. Correctness only; no timing.
   hard requirement, not an optional extra, and a failed test must disable GPU `$sum` and anything else using
   df64. Selection and sort use only integer ops and are unaffected.
 
-## NVIDIA Tesla T4: a discrete GPU over PCIe (GitHub-hosted `gpu-t4` runner, run 43164462049)
-Ubuntu 24.04, driver 590.48.01, 16 GiB, 4 vCPU host. Vulkan through `nvidia_icd.json`. The harness identifies a
-discrete GPU by device type and uses device-local buffers with staging copies inside the timed submission, so the
-PCIe transfer is included in every "GPU" time below. CPU baselines are the runner's 4 vCPUs, so speedups compare
-the T4 with that CPU, not with the M1. The first T4 run (43163593526) was invalid: the harness mistook the T4's
-small host-visible VRAM window (PCIe BAR) for unified memory, ran no staging copies, and POC 7 ran out of
-device memory. That is fixed.
+## NVIDIA Tesla T4: a discrete GPU over PCIe (GitHub-hosted `gpu-t4` runner)
+Ubuntu 24.04, driver 590.48.01, 16 GiB, 4 vCPU host, Vulkan through `nvidia_icd.json`. The harness identifies a
+discrete GPU by device type, uses device-local buffers with staging copies inside the timed submission, so PCIe
+transfer is included in every "GPU" time below, and keeps staging buffers in cached system memory. CPU baselines
+are the runner's 4 vCPUs, so speedups compare the T4 with that CPU, not with the M1. Runs: A = 43164462049,
+B = 43172532681 (after the staging-memory fix), C = 43171892951 (POC 9 first run).
 
-**Correctness on a real discrete NVIDIA GPU:** radix select 63/63, radix sort 32/32 permutations, `$sum` runs
-and POC 4 pass in this run. The df64 results (POC 1 add/mul/div/sqrt kernel errors 0.1 to 0.6 x 2^-44, `fma`
-fused, GPU-side split correct) come from the first T4 run (43163593526), where the harness read the BAR window
-directly. In this run POC 0, 1 and 8 returned all zeros (FAIL, worst error 2^44) because those three programs had
-not been given the staging copies, so they read an empty host buffer: a harness bug, not a device result. They
-are fixed and need one more T4 run to confirm under staging. The df64 failure of lavapipe does not occur on the T4.
+**Harness bugs found by these runs (all fixed, listed so older numbers are not trusted):** the first T4 run
+(43163593526) mistook the T4's small host-visible VRAM window (PCIe BAR) for unified memory and ran out of device
+memory; POC 0, 1 and 8 lacked the staging copies and returned zeros in run A; and staging buffers were in
+uncached (write-combined) memory, so every host readback was extremely slow and was counted as GPU time. That
+last one made the radix sort look 2x instead of 3x to 4x and produced run A's sort numbers.
+
+**Correct on a real discrete NVIDIA GPU:** df64 add/mul/div/sqrt kernel errors 0.1 to 0.6 x 2^-44 and `fma` fused
+(POC 1, POC 8 6/6 on both variants), the GPU-side double -> df64 split, radix select 63/63, radix sort 32/32
+permutations, POC 4. The df64 failure of lavapipe does not occur here.
+
+Speedup of the GPU (PCIe included) over the CPU on the runner:
 
 | workload | 64K | 256K | 1M | 4M | 16M |
 |---|---|---|---|---|---|
-| `$sum`, 1 group, GPU split | 2.7x | 4.5x | 5.2x | 5.2x | 5.4x |
-| `$sum`, 16 groups, GPU split | 0.54x | 0.81x | 0.89x | 0.88x | 1.10x |
-| radix select, 3 ranks | 1.9x | 4.7x | 5.8x | 2.2x | 2.5x |
-| radix sort, 64-bit keys | 1.3x | 1.7x | 2.0x | 1.7x | 1.9x |
-| radix sort, 32-bit keys | 2.1x | 2.7x | 2.1x | 2.7x | 2.4x |
+| `$sum`, 1 group, GPU split (run B) | 3.0x | 5.2x | 5.3x | 4.9x | 2.0x |
+| `$sum`, 1 group, GPU split (run A) | 2.7x | 4.5x | 5.2x | 5.2x | 5.4x |
+| `$sum`, 16 groups (run B) | 0.71x | 1.3x | 1.1x | 1.4x | 1.5x |
+| `$stdDev`, 1 group (run B) | 2.8x | 5.1x | 6.0x | 6.7x | 6.8x |
+| `$stdDev`, 16 groups (run B) | 0.47x | 0.86x | 0.82x | 0.92x | 0.99x |
+| radix select, 3 ranks (run B, cold) | 1.3x | 4.1x | 5.4x | 2.3x | 10.8x |
+| radix sort, 64-bit keys (run B) | 3.4x | 3.9x | 3.0x | 3.4x | 3.9x |
+| radix sort, 32-bit keys (run B) | 5.2x | 6.0x | 5.0x | 5.8x | 6.5x |
 
-- **`$sum` holds up over PCIe:** 4x to 5.4x for one group, still about break-even for 16 groups. The
-  conclusions from the M1 carry over; the few-groups limit is not an Apple-specific artifact.
-- **Radix select scales badly past 1M on the T4 (unexplained):** 2.1 ms of GPU time at 1M becomes 28.8 ms at 4M
-  and 104 ms at 16M, about 13x for 4x the data, though the same kernel scaled linearly on the M1. The PCIe
-  copy is 9 ms at 16M, so the kernel is the cost. I have not found the cause.
-- **The radix sort does not transfer well to the T4:** about 2x against 3.5x to 5x on the M1. At 16M, 805 ms of
-  GPU time is about 50 ms per pass, where memory bandwidth alone would allow about 1 to 2 ms. The kernel gives
-  each thread 16 consecutive keys, so neighbouring lanes read far apart (uncoalesced), which a unified-memory
-  Apple GPU tolerates and an NVIDIA GPU does not. This is a hypothesis, not a measurement. These numbers describe
-  an unoptimized kernel, not a limit of the hardware.
-- **POC 8 df64 self-test:** passes all six probes on the M1 on both variants (an earlier `sqrt` failure was a bug
-  in the test's inputs). On the T4 the first run's df64 results are valid (above); the self-test itself has not
-  yet run correctly there. The no-`fma` variant is as accurate as the `fma` one on the M1, so it can serve drivers
-  whose `fma` is not fused if lavapipe turns out to be one (not yet checked on lavapipe).
+- **GPU timings on this runner vary a lot between runs**, which makes the single-run numbers above indicative
+  only: `$sum` at 16M with one group was 5.4x in run A and 2.0x in run B (GPU time 11.5 ms vs 47.4 ms), and radix
+  select at 16M took 104 ms in run A and 17.5 ms in run B. Other tenants or GPU clock/power throttling are
+  possible causes; neither is confirmed. The T4 job now logs GPU clocks, temperature, power and throttle reasons
+  during the benchmarks to find out. Until then, treat T4 speedups as +-2x and the CPU-side numbers (stable
+  across runs) as the reliable half.
+- **`$sum` and `$stdDev` for one group keep a 3x to 7x gain over PCIe; with 16 groups they are break-even or
+  worse**, the same few-groups limit as on the M1.
+- **Radix sort is about 3x to 4x on the T4**, close to the M1's 3.5x to 5x. At 16M the 16 passes take 380 ms
+  (host upload 8, host readback 9); per kernel over 16 passes: count 70 ms, scan 56 ms, scatter 148 ms. The
+  single-workgroup scan is about 15% of the total and is the obvious thing to parallelize.
+- **Retracted:** my earlier statements that the T4 radix sort was slow because of uncoalesced reads, and that the
+  sort and select kernels "scale badly on NVIDIA". The sort cost was the uncached readback (above). The select
+  slowdown at 4M (27 ms where an isolated sweep shows 4 ms) is real in the benchmark loop, is not a GPU cold-start
+  effect (cold and warm calls took the same time), and is still unexplained; the sweep now also repeats n=4M
+  after different kinds of CPU work to see whether that interferes.
 - `$sum` accuracy on the T4 equals the lavapipe numbers exactly, which is how the earlier lavapipe claim was
   caught (see the retraction above).
+
+## POC 9: `$stdDev` (`poc9_stddev.cpp`, `shaders/std_m2.comp`)
+The real accumulator (`accumulator_std_dev.cpp`) is plain-double Welford with a division per element. GPU method:
+pass 1 is the POC 2 `$sum` kernel (df64 sum per group), the host computes the means, pass 2 sums `(x - mean)^2` in
+df64 relative to the global mean, so partials just add with no Chan merge correction. Data is uploaded once.
+Relative error of `stdDevPop` against a double-double oracle, n = 1M (T4, run C and B):
+
+| data | CPU Welford | naive double 2-pass | GPU df64 |
+|---|---|---|---|
+| mean 0, sd 1 | 1.9e-14 | 2.1e-14 | 4.4e-16 |
+| mean 1e6+0.3, sd 1 | 2.6e-11 | 1.3e-14 | 2.9e-13 |
+| mean 123456789.123, sd 1e-2 | 1.1e-7 | 1.2e-12 | 8.5e-10 |
+| mixed magnitude 1e-3..1e3 | 8.8e-15 | 7.1e-15 | 3.0e-16 |
+
+The GPU result is as accurate as or better than the CPU's Welford everywhere, and 100x to 1000x better when the
+mean dwarfs the deviation; a plain double two-pass beats the GPU's df64 on that kind of data because converting a
+53-bit double to df64 keeps only about 48 bits. (A "mean 1e9" row was dropped: 1e9 is a multiple of 64, so it
+splits exactly and the 0 error was an artifact.) Timing is in the table above: 5x to 7x for one group from 256K
+values, no gain for 16 groups. Like `$sum` it is not bit-identical to the CPU, so it is opt-in.
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
@@ -239,9 +267,9 @@ are fixed and need one more T4 run to confirm under staging. The df64 failure of
   and a startup known-answer self-test that gates df64 use (POC 1 and lavapipe above: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
-- Discrete GPU (T4, PCIe included): `$sum` for few groups keeps a 4x to 5x gain. Radix select (2x to 6x) and
-  radix sort (about 2x) gained less than on the M1 and need kernel work (coalescing, scaling past 1M) before
-  their M1 numbers can be quoted for discrete GPUs.
+- Discrete GPU (T4, PCIe included): `$sum` and `$stdDev` for few groups keep a 3x to 7x gain, radix sort is about
+  3x to 4x and radix select 4x to 10x at 256K and above, with run-to-run variation up to 4x on the hosted runner
+  that is not yet explained. The df64 startup self-test picks the variant (fma, or Dekker without fma on lavapipe).
 - Not measured: other discrete GPUs, Windows/Linux AMD, PCIe 4/5 hosts.
 
 ## POC 4: failure handling: PASS (12/12, no GPU)

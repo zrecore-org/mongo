@@ -24,6 +24,24 @@ static int sweep(Sel& g, const std::vector<double>& data) {
                 for (int r = -2; r < 5; r++) { double t[3]; g.select(data.data(), n, ranks, t); if (r >= 0) { tg.push_back(t[0] + t[1] + t[2]); tu.push_back(t[0]); tk.push_back(t[1]); } }
                 printf("%10zu %8u %8u | %8.3f (%.2f/%.2f)\n", n, cap, passes, median(tg), median(tu), median(tk));
             }
+    // The benchmark loop saw ~27 ms at 4M elements where the sweep above sees ~4 ms. What differs is the work between
+    // GPU calls, so repeat n = 4M with each kind of intervening CPU work.
+    printf("interference at n=4M (median GPU ms of 7 runs, same data and ranks as the sweep):\n");
+    size_t n = 1u << 22;
+    std::vector<uint32_t> ranks = {(uint32_t)(n / 2), (uint32_t)(n * 9 / 10), (uint32_t)(n * 99 / 100)};
+    g.maxWgs = 1024; g.passes = 8;
+    for (int mode = 0; mode < 4; mode++) {
+        std::vector<double> tg;
+        for (int r = -2; r < 5; r++) {
+            if (mode == 1) { auto c = std::vector<double>(data.begin(), data.begin() + n); for (uint32_t k : ranks) std::nth_element(c.begin(), c.begin() + k, c.end()); }
+            if (mode == 2) { auto c = std::vector<double>(data.begin(), data.begin() + n); std::sort(c.begin(), c.end()); }
+            if (mode == 3) { std::vector<double> big(1u << 24, 1.0); double s = 0; for (double x : big) s += x; if (s < 0) printf("."); }  // allocate and touch 128 MB
+            double t[3]; g.select(data.data(), n, ranks, t);
+            if (r >= 0) tg.push_back(t[0] + t[1] + t[2]);
+        }
+        const char* names[] = {"back to back", "after 3x nth_element on a copy", "after std::sort on a copy", "after allocating and summing 128 MB"};
+        printf("  %-40s %8.3f\n", names[mode], median(tg));
+    }
     return 0;
 }
 

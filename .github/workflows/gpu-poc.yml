@@ -217,6 +217,13 @@ jobs:
         working-directory: poc/gpu
         run: ./build/poc4_fallback
 
+      # GPU clocks, temperature, power and throttle reasons once a second, to see whether run-to-run timing variation
+      # is throttling. Summarized in the last step.
+      - name: Start GPU telemetry
+        run: |
+          nohup nvidia-smi --query-gpu=timestamp,clocks.sm,clocks.max.sm,temperature.gpu,power.draw,clocks_throttle_reasons.active --format=csv,noheader,nounits -l 1 > "$RUNNER_TEMP/smi.csv" 2>&1 &
+          echo $! > "$RUNNER_TEMP/smi.pid"
+
       # The df64 self-test is informational: a failure is a finding to read, not a reason to skip the benchmarks.
       - name: POC 8, df64 self-test (informational)
         working-directory: poc/gpu
@@ -265,6 +272,20 @@ jobs:
           ./run.sh poc2_sum bench 1
           ./run.sh poc2_sum bench 16
           ./run.sh poc2_sum accuracy
+
+      - name: GPU telemetry summary
+        if: always()
+        run: |
+          kill "$(cat "$RUNNER_TEMP/smi.pid")" 2>/dev/null || true
+          echo "samples: $(wc -l < "$RUNNER_TEMP/smi.csv")"
+          echo "sm clock MHz (min / max seen, and the maximum the GPU allows):"
+          awk -F', ' 'NF>=6 {c=$2+0; if(min==""||c<min)min=c; if(c>max)max=c; m=$3} END {print min " / " max "  (max " m ")"}' "$RUNNER_TEMP/smi.csv"
+          echo "temperature C max / power W max:"
+          awk -F', ' 'NF>=6 {if($4+0>t)t=$4+0; if($5+0>p)p=$5+0} END {print t " / " p}' "$RUNNER_TEMP/smi.csv"
+          echo "throttle reason masks seen (hex, count):"
+          awk -F', ' 'NF>=6 {print $6}' "$RUNNER_TEMP/smi.csv" | sort | uniq -c | sort -rn | head
+          echo "--- every 5th sample ---"
+          awk 'NR%5==1' "$RUNNER_TEMP/smi.csv" | head -40
 
   apple-gpu:
     name: Apple Silicon GPU checks (self-hosted runner, manual)
