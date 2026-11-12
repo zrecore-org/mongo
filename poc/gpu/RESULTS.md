@@ -352,6 +352,22 @@ Importing saves 2% to 12% up to 1M values and 21% to 32% at 4M to 16M; reusing a
 arenas to avoid the per-batch import cost. Only measured on the M1; on a discrete GPU importing host memory means
 reading it over PCIe, so this is a unified-memory (Apple, integrated) optimization.
 
+## Slang vs GLSL for the radix select (Phase 1 kernel-language input)
+Ported `rsel_hist` and `rsel_pick` to Slang (`slang/rsel.slang`, slangc 2026.20, the release the pg-strom fork pins; about
+60 lines, a near line-for-line translation). Same SPIR-V interface (bindings 0 to 2, push constants, spec constant id 0, entry name `main`).
+- Both modules pass `spirv-val`. The Slang hist kernel is 235 SPIR-V instructions against 248 from glslc.
+- Correctness on the M1 (MoltenVK): 63/63 ranks equal `std::nth_element`, the same as GLSL.
+- Speed on the M1, warm, 5 alternating runs each, 3 ranks, upload included (median ms, GLSL / Slang):
+  1M 1.16 / 1.19, 4M 3.47 / 3.54, 16M 12.17 / 12.31. Slang is 1% to 3% slower, within the run-to-run spread of the slowest runs
+  (1M: GLSL 1.14 to 1.17, Slang 1.17 to 1.25). I read that as no meaningful difference.
+- `precise` (what df64 needs): a Slang `precise float` chain of an add/sub (twoSum shape) gets `NoContraction` on all 6 operations; without
+  `precise` it gets none. So the mechanism exists. The emitted decoration is the only thing checked: no df64 kernel was ported, so
+  "df64 stays exact through Slang" is **not** verified, and neither is whether Metal honours it through MoltenVK (the GLSL path needed that check, POC 1).
+- Not measured: lavapipe, the T4, Slang's CPU target, Slang in the Bazel build, `-fp-mode precise` effects beyond the decoration check.
+- Reading for Phase 1: nothing here argues against Slang on code quality or speed, and nothing argues for it on speed. The decision is still
+  about the build dependency (`slangc` in MongoDB's third-party tree) and the one-source-for-kernels-and-CPU-oracle benefit.
+  Smallest next check if Slang is a serious candidate: port `selftest.comp` (df64 known answers) and run it on the M1, lavapipe and the T4.
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 4M for `$sum` and `$stdDev` with 16 groups on the M1), with the CPU path as automatic fallback (POC 4)

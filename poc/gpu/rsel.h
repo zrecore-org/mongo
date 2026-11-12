@@ -14,8 +14,11 @@ struct Sel {
     bool init(size_t maxN, uint32_t ranks) {
         if (!ctx.init(gpu::defaultLoaderPaths())) return false;
         R = ranks;
-        kh = ctx.makeKernel("build/shaders/rsel_hist.spv", 3, 12, {ranks});
-        kp = ctx.makeKernel("build/shaders/rsel_pick.spv", 3, 12, {ranks});
+        // GPU_POC_RSEL_DIR=build/slang selects the Slang-compiled kernels (slang/rsel.slang) instead of the GLSL ones
+        const char* d = getenv("GPU_POC_RSEL_DIR");
+        std::string dir = d ? d : "build/shaders";
+        kh = ctx.makeKernel(dir + "/rsel_hist.spv", 3, 12, {ranks});
+        kp = ctx.makeKernel(dir + "/rsel_pick.spv", 3, 12, {ranks});
         in = ctx.alloc(maxN * 8); hist = ctx.alloc(ranks * 256 * 4); st = ctx.alloc(ranks * 12);
         return true;
     }
