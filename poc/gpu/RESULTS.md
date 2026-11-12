@@ -210,35 +210,39 @@ last one made the radix sort look 2x instead of 3x to 4x and produced run A's so
 (POC 1, POC 8 6/6 on both variants), the GPU-side double -> df64 split, radix select 63/63, radix sort 32/32
 permutations, POC 4. The df64 failure of lavapipe does not occur here.
 
-Speedup of the GPU (PCIe included) over the CPU on the runner:
+**Method (changed after run B):** each benchmark first times the CPU baselines, then warms the GPU for 1.5 s, then
+times the GPU back to back; one extra "cold" sample is taken right after the CPU phase. Before this change the
+CPU baselines (100 ms to 400 ms) ran between GPU calls, and the T4 idles at 300 MHz: it showed up as 4x run-to-run
+swings (e.g. `$sum` at 16M with one group 5.4x in run A, 2.0x in run B) and a bogus slowdown of radix select at 4M.
+Telemetry (nvidia-smi once a second, run 43173618273): SM clock 300 to 465 MHz during the CPU phases and 1590 MHz
+under GPU load, temperature 43 C at most (no thermal throttling), power cap (SW power cap throttle reason) in 9 of
+121 samples at up to 71 W of its 70 W limit.
+
+Speedup of the GPU (PCIe included) over the CPU on the runner, sustained (warmed-up) clocks, run D = 43173618273:
 
 | workload | 64K | 256K | 1M | 4M | 16M |
 |---|---|---|---|---|---|
-| `$sum`, 1 group, GPU split (run B) | 3.0x | 5.2x | 5.3x | 4.9x | 2.0x |
-| `$sum`, 1 group, GPU split (run A) | 2.7x | 4.5x | 5.2x | 5.2x | 5.4x |
-| `$sum`, 16 groups (run B) | 0.71x | 1.3x | 1.1x | 1.4x | 1.5x |
-| `$stdDev`, 1 group (run B) | 2.8x | 5.1x | 6.0x | 6.7x | 6.8x |
-| `$stdDev`, 16 groups (run B) | 0.47x | 0.86x | 0.82x | 0.92x | 0.99x |
-| radix select, 3 ranks (run B, cold) | 1.3x | 4.1x | 5.4x | 2.3x | 10.8x |
-| radix sort, 64-bit keys (run B) | 3.4x | 3.9x | 3.0x | 3.4x | 3.9x |
-| radix sort, 32-bit keys (run B) | 5.2x | 6.0x | 5.0x | 5.8x | 6.5x |
+| `$sum`, 1 group, GPU split | 3.7x | 5.9x | 5.6x | 5.6x | 5.8x |
+| `$sum`, 16 groups | 0.98x | 1.5x | 1.1x | 1.5x | 1.6x |
+| `$stdDev`, 1 group | 2.9x | 6.4x | 6.8x | 7.2x | 7.4x |
+| `$stdDev`, 16 groups | 0.54x | 0.97x | 0.78x | 0.96x | 1.0x |
+| radix select, 3 ranks | 2.7x | 6.4x | 8.2x | 11.1x | 12.4x |
+| radix sort, 64-bit keys | 3.5x | 4.0x | 2.9x | 3.5x | 3.9x |
+| radix sort, 32-bit keys | 5.4x | 6.2x | 4.9x | 6.0x | 6.6x |
 
-- **GPU timings on this runner vary a lot between runs**, which makes the single-run numbers above indicative
-  only: `$sum` at 16M with one group was 5.4x in run A and 2.0x in run B (GPU time 11.5 ms vs 47.4 ms), and radix
-  select at 16M took 104 ms in run A and 17.5 ms in run B. Other tenants or GPU clock/power throttling are
-  possible causes; neither is confirmed. The T4 job now logs GPU clocks, temperature, power and throttle reasons
-  during the benchmarks to find out. Until then, treat T4 speedups as +-2x and the CPU-side numbers (stable
-  across runs) as the reliable half.
-- **`$sum` and `$stdDev` for one group keep a 3x to 7x gain over PCIe; with 16 groups they are break-even or
-  worse**, the same few-groups limit as on the M1.
-- **Radix sort is about 3x to 4x on the T4**, close to the M1's 3.5x to 5x. At 16M the 16 passes take 380 ms
-  (host upload 8, host readback 9); per kernel over 16 passes: count 70 ms, scan 56 ms, scatter 148 ms. The
-  single-workgroup scan is about 15% of the total and is the obvious thing to parallelize.
-- **Retracted:** my earlier statements that the T4 radix sort was slow because of uncoalesced reads, and that the
-  sort and select kernels "scale badly on NVIDIA". The sort cost was the uncached readback (above). The select
-  slowdown at 4M (27 ms where an isolated sweep shows 4 ms) is real in the benchmark loop, is not a GPU cold-start
-  effect (cold and warm calls took the same time), and is still unexplained; the sweep now also repeats n=4M
-  after different kinds of CPU work to see whether that interferes.
+- **Cold (first query after the GPU idled) costs 1.5x to 2x more**: radix select at 4M took 11.0 ms cold against 6.0 ms
+  sustained, and at 16M 34 ms against 23 ms. A server that sends the GPU sporadic work pays the idle-clock ramp; a
+  busy one does not. Earlier T4 numbers (runs A and B above) mixed the two states and should not be quoted.
+- **`$sum` and `$stdDev` for one group keep a 4x to 7x gain over PCIe from about 256K values; with 16 groups they are
+  break-even** (0.8x to 1.6x), the same few-groups limit as on the M1.
+- **Radix select is the biggest win**, 6x to 12x from 256K values. **Radix sort is 3x to 4x** (5x to 6x for 32-bit
+  keys), close to the M1's 3.5x to 5x. At 16M the 16 sort passes take 380 ms on the GPU (host upload 8, host
+  readback 9); per kernel over 16 passes: count 70 ms, scan 56 ms, scatter 148 ms. The single-workgroup scan is
+  about 15% of the total and is the obvious thing to parallelize.
+- **Retracted:** (1) that the T4 radix sort was slow because of uncoalesced reads, and that the sort and select
+  kernels "scale badly on NVIDIA": the sort cost was uncached host readback, and the select slowdown at 4M was GPU
+  idle clocks plus run-to-run noise; (2) that the select slowdown "is not a cold-start effect": my warm test ran only
+  three calls of a few ms and could not have ramped the clock, and the telemetry and the later runs show it is.
 - `$sum` accuracy on the T4 equals the lavapipe numbers exactly, which is how the earlier lavapipe claim was
   caught (see the retraction above).
 
@@ -268,8 +272,8 @@ values, no gain for 16 groups. Like `$sum` it is not bit-identical to the CPU, s
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
 - Discrete GPU (T4, PCIe included): `$sum` and `$stdDev` for few groups keep a 3x to 7x gain, radix sort is about
-  3x to 4x and radix select 4x to 10x at 256K and above, with run-to-run variation up to 4x on the hosted runner
-  that is not yet explained. The df64 startup self-test picks the variant (fma, or Dekker without fma on lavapipe).
+  3x to 4x and radix select 6x to 12x at 256K and above, at sustained clocks (a cold first query costs 1.5x to 2x
+  more on the T4). The df64 startup self-test picks the variant (fma, or Dekker without fma on lavapipe).
 - Not measured: other discrete GPUs, Windows/Linux AMD, PCIe 4/5 hosts.
 
 ## POC 4: failure handling: PASS (12/12, no GPU)
