@@ -65,17 +65,50 @@ The CPU reference is a port of `DoubleDoubleSummation::addDouble` (`src/mongo/ut
 - Determinism: 30 identical runs gave 1 distinct result; 5 different grid sizes gave 5 distinct results,
   so the answer depends on the workgroup count and the grid would have to be fixed for reproducibility.
 - Fallback flag: 1e300, NaN and denormal inputs all set the flag; clean data does not.
-- **Caveat:** the ill-conditioned run (+1e10, 1M small values, -1e10) used a non-exact reference, so its
-  ulp counts (CPU 1.3M, GPU 1.9M, plain 754M) only rank the three methods; they are not exact errors. It
-  needs a rerun against an exact oracle.
+- Ill-conditioned run (+1e10, 1M values of ~1e-3, -1e10), now against an exactly rounded reference
+  (Shewchuk partials; true sum 1499.935579): CPU `$sum` is off by 1.3M ulp, GPU df64 by 1.9M ulp, naive
+  double by 754M ulp. Both double-double paths lose accuracy to the 1e10 cancellation, GPU about 1.5x worse
+  than CPU, and both are about 400x better than naive double. Neither is exact. I did not investigate why
+  CPU `$sum` loses this much here.
 
+### POC 2 timing (M1 Pro, unified memory; milliseconds, GPU = prep + GPU + combine, GPU-side split)
+| n | CPU `$sum` G=1 | GPU G=1 | speedup | CPU `$sum` G=16 | GPU G=16 | speedup |
+|---|---|---|---|---|---|---|
+| 16K | 0.109 | 0.383 | 0.28x | 0.039 | 0.408 | 0.10x |
+| 64K | 0.440 | 0.422 | 1.04x | 0.152 | 0.419 | 0.36x |
+| 256K | 1.72 | 0.658 | 2.6x | 0.641 | 0.680 | 0.94x |
+| 1M | 6.89 | 1.57 | 4.4x | 2.48 | 1.55 | 1.6x |
+| 4M | 27.7 | 8.9 | 3.1x | 9.71 | 5.10 | 1.9x |
+| 16M | 110.4 | 17.5 | 6.3x | 40.7 | 21.4 | 1.9x |
+
+- Break-even about 64K elements for one group, about 256K to 1M for 16 groups. Plain `double` summation on
+  the CPU is 4 ms at 16M, faster than the GPU, so the GPU only beats the double-double CPU path.
+- There is a fixed cost of about 0.3 to 0.4 ms per dispatch. A discrete GPU would add a PCIe transfer
+  term that this machine does not show (not measured).
+
+## POC 3: radix select (k-th element / percentile), 63 ranks
+Correct 63/63 against `std::nth_element` after fixing a shared array sized by a specialization constant
+(Metal miscompiled it; the fix was a fixed-size array). `nth_element x3` is the CPU cost of three ranks.
+
+| n | CPU nth_element x3 | GPU total | speedup |
+|---|---|---|---|
+| 64K | 0.85 | 0.92 | 0.9x |
+| 256K | 3.46 | 1.45 | 2.4x |
+| 1M | 13.3 | 2.49 | 5.3x |
+| 4M | 58.6 | 5.82 | 10x |
+| 16M | 211 | 13.2 | 16x |
+
+Break-even about 64K. Numeric results equal the CPU's (radix select returns an input element).
+
+## Phase 1 go/no-go: conditional go
+- Go only as opt-in, for batches of at least 256K elements, with the CPU path as automatic fallback (POC 4)
+  and a startup known-answer self-test (POC 1: `precise` on every df64 op is mandatory).
+- `$sum` on the GPU is not bit-identical to the CPU, so it must not be on by default; selection and
+  percentile are exact and are the better first targets.
+- Not measured: a discrete GPU with PCIe transfer, Linux/CUDA-class drivers, and `$sum` with many groups
+  above 16.
 ## POC 4: failure handling: PASS (12/12, no GPU)
 Mock device with injected device-lost, OOM and timeout (with partial output written before failing).
 Whole-batch CPU rerun returns the correct result every time; the breaker opens after 3 consecutive
 failures, serves 50 calls without touching the device, doubles the backoff 1 s -> 2 s up to the 8 s cap, and
 closes after a successful canary; a single transient failure leaves it closed.
-
-## Not yet done
-- POC 2 timing sweep (1K..32M elements, GPU vs `DoubleDoubleSummation`, break-even table, modeled PCIe term).
-- POC 3: radix sort and percentile.
-- Exact-oracle rerun of the ill-conditioned case.

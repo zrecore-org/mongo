@@ -208,7 +208,22 @@ static int accuracy() {
         std::vector<DD> r; cpuDd(v.data(), nullptr, 1, n, r);
         std::vector<double> nv; cpuNaive(v.data(), nullptr, 1, n, nv);
         Timing tm; double g = gp.run(true, v.data(), nullptr, n, tm)[0];
-        double exact = 0; { DD d; for (size_t i = 1; i + 1 < n; i++) d.add(v[i]); exact = d.get(); }
+        // Exactly rounded sum of the small values (Shewchuk partials, as in Python's math.fsum).
+        double exact = 0;
+        {
+            std::vector<double> p;
+            for (size_t k = 1; k + 1 < n; k++) {
+                double x = v[k]; size_t j = 0;
+                for (double y : p) {
+                    if (std::fabs(x) < std::fabs(y)) std::swap(x, y);
+                    volatile double hi = x + y; double lo = y - (hi - x);
+                    if (lo != 0) p[j++] = lo;
+                    x = hi;
+                }
+                p.resize(j); p.push_back(x);
+            }
+            for (double y : p) exact += y;  // partials are non-overlapping; small count, ascending magnitude
+        }
         printf("ill-conditioned (+1e10, 1M small, -1e10): small-values sum (reference) = %.12g | CPU $sum = %.12g (%lld ulp) | gpu df64 = %.12g (%lld ulp) | naive double = %.12g (%lld ulp)\n",
                exact, r[0].get(), (long long)ulpDist(r[0].get(), exact), g, (long long)ulpDist(g, exact), nv[0], (long long)ulpDist(nv[0], exact));
     }
