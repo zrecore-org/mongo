@@ -111,7 +111,8 @@ Break-even about 64K. Numeric results equal the CPU's (radix select returns an i
   and a startup known-answer self-test (POC 1: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
-- Not measured: a discrete GPU with PCIe transfer, Linux/CUDA-class drivers, .
+- Not measured: a discrete GPU with PCIe transfer, Linux/CUDA-class drivers.
+
 ## POC 4: failure handling: PASS (12/12, no GPU)
 Mock device with injected device-lost, OOM and timeout (with partial output written before failing).
 Whole-batch CPU rerun returns the correct result every time; the breaker opens after 3 consecutive
