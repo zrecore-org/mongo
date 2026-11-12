@@ -106,8 +106,24 @@ Correct 63/63 against `std::nth_element` after fixing a shared array sized by a 
 
 Break-even about 64K. Numeric results equal the CPU's (radix select returns an input element).
 
+## POC 5: batch assembly cost (`poc5_gather.cpp`, CPU only, no GPU)
+Gather of scattered 1000-double blocks into one contiguous staging buffer (best of 20, warm cache, so a
+lower bound; it excludes BSONColumn decode, which would be needed either way):
+
+| blocks | n | gather | per element |
+|---|---|---|---|
+| 256 | 256K | 0.043 ms | 0.17 ns |
+| 1024 | 1M | 0.27 ms | 0.27 ns |
+| 4096 | 4M | 2.2 ms | 0.53 ns |
+| 16384 | 16M | 9.3 ms | 0.57 ns |
+
+Adding it to the GPU `$sum` totals (GPU-side split): 1M, G=1: 1.84 ms vs CPU 6.9 (3.7x, was 4.4x); 1M, G=16:
+1.82 vs 2.48 (1.4x, was 1.6x); 256K, G=16: 0.72 vs 0.64 (now a loss); 16M, G=16: 30.7 vs 40.7 (1.3x, was 1.9x).
+Assembly is not a deal-breaker but pushes the G=16 break-even to about 1M elements. Gathering is skipped if
+the shader reads blocks in place (unified memory only); not measured.
+
 ## Phase 1 go/no-go: conditional go
-- Go only as opt-in, for batches of at least 256K elements, with the CPU path as automatic fallback (POC 4)
+- Go only as opt-in, for batches of at least 256K elements (about 1M for `$sum` with several groups), with the CPU path as automatic fallback (POC 4)
   and a startup known-answer self-test (POC 1: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
