@@ -187,17 +187,27 @@ struct Ctx {
             VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
             VK_CHECK(vkCreateFence(dev, &fi, nullptr, &fence));
 
-            // Pick host-visible+coherent memory; prefer memory that is also device-local (UMA).
+            // Pick host-visible+coherent memory. Unified-memory devices (integrated GPUs, Apple, CPU drivers) use
+            // memory that is also device-local. A discrete GPU can expose a small host-visible window of VRAM
+            // (the PCIe BAR) that looks "unified" but is not, so it is decided by the device type: the host
+            // buffer is then system memory and device-local twins are added below (staging copies).
             VkPhysicalDeviceMemoryProperties mp;
             vkGetPhysicalDeviceMemoryProperties(phys, &mp);
+            const bool discrete = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && !getenv("GPU_POC_FORCE_HOST_MEMORY");
             const VkMemoryPropertyFlags want = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
             bool ok = false;
-            for (uint32_t i = 0; i < mp.memoryTypeCount && !ok; i++)
-                if ((mp.memoryTypes[i].propertyFlags & (want | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) ==
-                    (want | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+            if (!discrete)
+                for (uint32_t i = 0; i < mp.memoryTypeCount && !ok; i++)
+                    if ((mp.memoryTypes[i].propertyFlags & (want | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) ==
+                        (want | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+                        memType = i;
+                        unifiedMemory = true;
+                        ok = true;
+                    }
+            for (uint32_t i = 0; i < mp.memoryTypeCount && !ok; i++)  // system memory first on a discrete GPU
+                if ((mp.memoryTypes[i].propertyFlags & (want | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) == want) {
                     memType = i;
-                    unifiedMemory = true;
                     ok = true;
                 }
             for (uint32_t i = 0; i < mp.memoryTypeCount && !ok; i++)

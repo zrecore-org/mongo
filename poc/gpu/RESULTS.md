@@ -189,6 +189,21 @@ MoltenVK/Metal. Correctness only; no timing.
   hard requirement, not an optional extra, and a failed test must disable GPU `$sum` and anything else using
   df64. Selection and sort use only integer ops and are unaffected.
 
+## NVIDIA Tesla T4 (GitHub-hosted `gpu-t4` runner, run 43163593526): first, partial run
+Ubuntu 24.04, driver 590.48.01, 16 GiB, Vulkan through `nvidia_icd.json`. First run of the T4 job; it stopped
+at POC 7, so this is not a result set yet.
+
+- **Correct on a real discrete NVIDIA GPU:** df64 (POC 1: add/mul/div/sqrt kernel errors 0.1 to 0.6 x 2^-44, the
+  same as Metal; `fma` is fused and `twoProd` exact), the GPU-side double -> df64 split, radix select 63/63, and
+  POC 4. The df64 failure seen on lavapipe does not occur on NVIDIA.
+- **The timings from this run are not valid.** The harness reported `memory=unified` because the T4 exposes a
+  small host-visible window of VRAM (the PCIe BAR), which it mistook for unified memory. No staging copies ran,
+  uploads went through the BAR window (47 ms for 128 MB), and POC 7 then failed in `vkAllocateMemory` (out of
+  device memory) on the large buffers. Fixed afterwards: a discrete GPU is now identified by device type and uses
+  device-local buffers with staging copies inside the timed submission. A new run is needed.
+- The POC 8 self-test passed every probe except `sqrt`, whose test inputs were signed while the kernel returns 0 for
+  negative input (a test bug, fixed; the M1 now passes 6/6).
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 1M for `$sum` with several groups), with the CPU path as automatic fallback (POC 4)

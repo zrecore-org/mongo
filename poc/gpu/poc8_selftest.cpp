@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
     // Probes 3-5: df64 mul/div/sqrt through the POC 1 kernel of the same variant.
     auto k = ctx.makeKernel("build/shaders/df64_" + tag + ".spv", 3, 8);
     std::vector<double> a(n), b(n);
-    for (uint32_t i = 0; i < n; i++) { a[i] = sgn() * mant() * std::ldexp(1.0, (int)(rng() % 21) - 10); b[i] = sgn() * mant() * std::ldexp(1.0, (int)(rng() % 21) - 10); }
+    for (uint32_t i = 0; i < n; i++) { a[i] = mant() * std::ldexp(1.0, (int)(rng() % 21) - 10); if (rng() & 1) a[i] = -a[i]; b[i] = sgn() * mant() * std::ldexp(1.0, (int)(rng() % 21) - 10); }
     auto Bb = B;
     for (uint32_t i = 0; i < n; i++) { float h, l; splitD(a[i], h, l); ((float*)A.ptr)[2 * i] = h; ((float*)A.ptr)[2 * i + 1] = l; splitD(b[i], h, l); ((float*)Bb.ptr)[2 * i] = h; ((float*)Bb.ptr)[2 * i + 1] = l; }
     const char* names[3] = {"df64 mul vs exact", "df64 div vs exact", "df64 sqrt vs exact"};
@@ -77,9 +77,9 @@ int main(int argc, char** argv) {
         for (uint32_t i = 0; i < n; i++) {
             // Reference on the split inputs (hi+lo as doubles); a double carries 53 bits, enough to see 2^-41.
             double x = (double)((float*)A.ptr)[2 * i] + ((float*)A.ptr)[2 * i + 1], y = (double)((float*)Bb.ptr)[2 * i] + ((float*)Bb.ptr)[2 * i + 1];
-            double ref = op == 1 ? x * y : op == 2 ? x / y : std::sqrt(std::fabs(x));
+            double ref = op == 1 ? x * y : op == 2 ? x / y : (x <= 0 ? 0.0 : std::sqrt(x));  // dfSqrt returns 0 for x <= 0
             double got = (double)((float*)R.ptr)[2 * i] + ((float*)R.ptr)[2 * i + 1];
-            double err = std::fabs(got - ref) / std::fabs(ref) / std::ldexp(1.0, -44);
+            double err = ref == 0 ? std::fabs(got) : std::fabs(got - ref) / std::fabs(ref) / std::ldexp(1.0, -44);
             worst = std::max(worst, err);
             if (!(err <= 4)) bad++;
         }
