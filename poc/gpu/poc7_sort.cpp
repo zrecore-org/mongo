@@ -13,6 +13,7 @@ struct GpuSort {
     gpu::Ctx ctx;
     gpu::Kernel kc, ks, kt;
     gpu::Buf keyA, keyB, idxA, idxB, bh;
+    uint32_t kernelMask = 7;   // profile mode: bit0 count, bit1 scan, bit2 scatter (results are wrong unless 7)
     bool init(size_t maxN) {
         if (!ctx.init(gpu::defaultLoaderPaths())) return false;
         kc = ctx.makeKernel("build/shaders/sort_count.spv", 2, 12);
@@ -33,9 +34,9 @@ struct GpuSort {
         ctx.upload(keyA, n * 8);
         for (uint32_t p = 0; p < passes; p++) {
             uint32_t pc[3] = {(uint32_t)n, B, p};
-            ctx.dispatch(kc, {ki, &bh}, pc, B);
-            ctx.dispatch(ks, {&bh}, pc, 1);
-            ctx.dispatch(kt, {ki, ii, ko, io, &bh}, pc, B);
+            if (kernelMask & 1) ctx.dispatch(kc, {ki, &bh}, pc, B);
+            if (kernelMask & 2) ctx.dispatch(ks, {&bh}, pc, 1);
+            if (kernelMask & 4) ctx.dispatch(kt, {ki, ii, ko, io, &bh}, pc, B);
             std::swap(ki, ko); std::swap(ii, io);
         }
         ctx.download(*ii, n * 4);
@@ -48,7 +49,24 @@ struct GpuSort {
     void shutdown() { for (auto* b : {&keyA, &keyB, &idxA, &idxB, &bh}) ctx.release(*b); ctx.release(kc); ctx.release(ks); ctx.release(kt); ctx.destroy(); }
 };
 
-int main() {
+// T4 investigation: which of the three kernels takes the time (about 50 ms per pass at 16M keys on the T4).
+static int profile(GpuSort& g, const std::vector<uint64_t>& data) {
+    printf("profile: median GPU ms for 16 passes (64-bit keys), incl. PCIe copies of keys in and indices out\n%10s | %9s %9s %9s %9s\n", "n", "count", "scan", "scatter", "all");
+    for (size_t n : {1u << 20, 1u << 22, 1u << 24}) {
+        printf("%10zu |", n);
+        for (uint32_t mask : {1u, 2u, 4u, 7u}) {
+            g.kernelMask = mask;
+            std::vector<double> t;
+            for (int r = -1; r < 4; r++) { double tt[3]; g.sort(data.data(), n, 64, tt); if (r >= 0) t.push_back(tt[0] + tt[1] + tt[2]); }
+            printf(" %9.2f", med(t));
+        }
+        printf("\n");
+    }
+    g.kernelMask = 7;
+    return 0;
+}
+
+int main(int argc, char** argv) {
     const bool quick = getenv("GPU_POC_CORRECTNESS_ONLY") != nullptr;  // CI on a CPU Vulkan driver: no timing sweep
     const size_t maxN = quick ? 2u << 20 : 16u << 20;
     GpuSort g;
@@ -73,6 +91,7 @@ int main() {
         }
     }
     printf("correctness: %d/%d cases give the same permutation as std::stable_sort\n", cases - bad, cases);
+    if (argc > 1 && std::string(argv[1]) == "profile") { profile(g, data); g.shutdown(); return bad ? 1 : 0; }
     if (quick) { g.shutdown(); return bad ? 1 : 0; }
     printf("%10s | %9s | %-12s | speedup (64-bit keys) | %-18s | speedup (32-bit)\n", "n", "std::sort", "gpu 64-bit", "gpu 32-bit");
     std::string csv = "n,cpu_sort_ms,gpu64_ms,gpu64_gpu_ms,gpu32_ms,reorder_ms\n";

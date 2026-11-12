@@ -1,7 +1,9 @@
 // POC 8: startup known-answer self-test for df64 (the gate the plan requires before any GPU `$sum`).
 // Probes, each against an exact CPU result: fma, twoProd, the GPU-side double -> df64 split, and df64
 // mul/div/sqrt. Run with the variant tag ("precise" = fma twoProd, "nofma" = Dekker twoProd):
-//   ./run.sh poc8_selftest [precise|nofma]      exit 0 = all probes pass, 3 = at least one failed, 2 = no GPU
+//   ./run.sh poc8_selftest [precise|nofma|auto]   exit 0 = pass, 3 = failed, 2 = no GPU
+// "auto" is the startup gate the server would run: try the fma variant, fall back to the Dekker (no-fma) variant,
+// and report which one (or none) is safe to use. In the no-fma variant the raw fma probe is not applicable.
 #include "vkctx.h"
 
 #include <cmath>
@@ -9,8 +11,7 @@
 
 static void splitD(double d, float& hi, float& lo) { hi = (float)d; lo = (float)(d - (double)hi); }
 
-int main(int argc, char** argv) {
-    const std::string tag = argc > 1 ? argv[1] : "precise";
+static int runTag(const std::string& tag) {
     const std::string selftest = tag == "nofma" ? "build/shaders/selftest_nofma.spv" : "build/shaders/selftest.spv";
     gpu::Ctx ctx;
     if (!ctx.init(gpu::defaultLoaderPaths())) { printf("no GPU: %s\n", ctx.error.c_str()); return 2; }
@@ -31,7 +32,7 @@ int main(int argc, char** argv) {
     auto ks = ctx.makeKernel(selftest, 2, 8);
     std::vector<float> fa(n), fb(n);
     for (uint32_t i = 0; i < n; i++) { fa[i] = (float)(sgn() * mant() * std::ldexp(1.0, (int)(rng() % 21) - 10)); fb[i] = (float)(sgn() * mant() * std::ldexp(1.0, (int)(rng() % 21) - 10)); }
-    for (uint32_t op = 0; op < 2; op++) {
+    for (uint32_t op = tag == "nofma" ? 1 : 0; op < 2; op++) {  // the raw fma probe only matters when the kernels use fma
         for (uint32_t i = 0; i < n; i++) { ((float*)A.ptr)[2 * i] = fa[i]; ((float*)A.ptr)[2 * i + 1] = fb[i]; }
         uint32_t pc[2] = {n, op};
         ctx.begin(); ctx.upload(A); ctx.dispatch(ks, {&A, &R}, pc, (n + 63) / 64); ctx.download(R); ctx.submitWait();
@@ -88,4 +89,15 @@ int main(int argc, char** argv) {
     ctx.release(A); ctx.release(R); ctx.release(B); ctx.release(k); ctx.destroy();
     printf("SELFTEST %s: %s\n", tag.c_str(), failed ? "FAIL (do not use GPU df64 on this device)" : "PASS");
     return failed ? 3 : 0;
+}
+
+int main(int argc, char** argv) {
+    const std::string mode = argc > 1 ? argv[1] : "precise";
+    if (mode != "auto") return runTag(mode);
+    int rc = runTag("precise");
+    if (rc == 0) { printf("SELECTED: fma variant\n"); return 0; }
+    if (rc == 2) return 2;
+    rc = runTag("nofma");
+    printf("SELECTED: %s\n", rc == 0 ? "no-fma (Dekker) variant" : "none: GPU df64 must stay disabled");
+    return rc;
 }

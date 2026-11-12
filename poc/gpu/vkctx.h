@@ -41,6 +41,7 @@ struct Buf {
     size_t size{};
     VkBuffer dbuf{};
     VkDeviceMemory dmem{};
+    bool imported{false};   // host memory imported with VK_EXT_external_memory_host (not mapped by us)
     VkBuffer bound() const { return dbuf ? dbuf : buf; }
 };
 
@@ -70,6 +71,7 @@ struct Ctx {
     bool unifiedMemory{false};
     uint32_t devMemType{};
     bool haveDevMem{false};
+    bool hostImport{false};   // VK_EXT_external_memory_host is enabled
     std::string error;
 
     const char* memMode() const { return unifiedMemory ? "unified" : haveDevMem ? "discrete (device-local + staging copies)" : "host-visible only"; }
@@ -150,6 +152,16 @@ struct Ctx {
             for (auto& e : de)
                 if (!strcmp(e.extensionName, "VK_KHR_portability_subset"))
                     dext.push_back("VK_KHR_portability_subset");
+            bool haveExtHost = false, haveKhrExtMem = false;
+            for (auto& e : de) {
+                haveExtHost |= !strcmp(e.extensionName, "VK_EXT_external_memory_host");
+                haveKhrExtMem |= !strcmp(e.extensionName, "VK_KHR_external_memory");
+            }
+            if (haveExtHost && haveKhrExtMem && !getenv("GPU_POC_NO_HOST_IMPORT")) {
+                dext.push_back("VK_KHR_external_memory");
+                dext.push_back("VK_EXT_external_memory_host");
+                hostImport = true;
+            }
 
             float prio = 1.f;
             VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -261,6 +273,40 @@ struct Ctx {
         return b;
     }
 
+    // Wraps caller-owned host memory (page-aligned address and size) as a storage buffer without copying it.
+    // Only meaningful on unified-memory devices; throws if the driver refuses the import.
+    Buf importHost(void* p, size_t bytes) {
+        if (!hostImport) throw std::runtime_error("VK_EXT_external_memory_host not available");
+        Buf b;
+        b.size = bytes; b.ptr = p; b.imported = true;
+        VkMemoryHostPointerPropertiesEXT hp{VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT};
+        VK_CHECK(vkGetMemoryHostPointerPropertiesEXT(dev, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT, p, &hp));
+        VkExternalMemoryBufferCreateInfo eb{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO};
+        eb.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bi.pNext = &eb;
+        bi.size = bytes;
+        bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VK_CHECK(vkCreateBuffer(dev, &bi, nullptr, &b.buf));
+        VkMemoryRequirements mr;
+        vkGetBufferMemoryRequirements(dev, b.buf, &mr);
+        uint32_t bits = mr.memoryTypeBits & hp.memoryTypeBits;
+        if (!bits) throw std::runtime_error("no memory type accepts this host pointer");
+        uint32_t type = 0;
+        while (!((bits >> type) & 1)) type++;
+        VkImportMemoryHostPointerInfoEXT imp{VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT};
+        imp.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+        imp.pHostPointer = p;
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.pNext = &imp;
+        mai.allocationSize = bytes;
+        mai.memoryTypeIndex = type;
+        VK_CHECK(vkAllocateMemory(dev, &mai, nullptr, &b.mem));
+        VK_CHECK(vkBindBufferMemory(dev, b.buf, b.mem, 0));
+        return b;
+    }
+
     // Record host -> device copy of the first `bytes` (0 = all) of a staging buffer. No-op on unified memory.
     void upload(Buf& b, size_t bytes = 0) {
         if (!b.dbuf) return;
@@ -289,7 +335,7 @@ struct Ctx {
     void release(Buf& b) {
         if (!b.buf)
             return;
-        vkUnmapMemory(dev, b.mem);
+        if (!b.imported) vkUnmapMemory(dev, b.mem);
         vkDestroyBuffer(dev, b.buf, nullptr);
         vkFreeMemory(dev, b.mem, nullptr);
         if (b.dbuf) { vkDestroyBuffer(dev, b.dbuf, nullptr); vkFreeMemory(dev, b.dmem, nullptr); }

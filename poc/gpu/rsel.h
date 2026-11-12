@@ -10,6 +10,7 @@ struct Sel {
     gpu::Kernel kh, kp;
     gpu::Buf in, hist, st;
     uint32_t R = 0;
+    uint32_t maxWgs = 1024, passes = 8;   // knobs for the sweep (poc3_select sweep)
     bool init(size_t maxN, uint32_t ranks) {
         if (!ctx.init(gpu::defaultLoaderPaths())) return false;
         R = ranks;
@@ -26,12 +27,12 @@ struct Sel {
         uint32_t* s = (uint32_t*)st.ptr;
         for (uint32_t r = 0; r < R; r++) { s[3 * r] = 0; s[3 * r + 1] = 0; s[3 * r + 2] = ranks[r]; }
         double t1 = gpu::nowMs();
-        uint32_t wgs = std::clamp<size_t>((n + 4095) / 4096, 1, 1024);
+        uint32_t wgs = std::clamp<size_t>((n + 4095) / 4096, 1, maxWgs);
         ctx.begin();
         if (upload) ctx.upload(in, n * 8);
         ctx.upload(hist, R * 256 * 4);
         ctx.upload(st, R * 12);
-        for (uint32_t p = 0; p < 8; p++) {
+        for (uint32_t p = 0; p < passes; p++) {
             uint32_t pc[3] = {(uint32_t)n, wgs * 256, p};
             ctx.dispatch(kh, {&in, &hist, &st}, pc, wgs);
             ctx.dispatch(kp, {&in, &hist, &st}, pc, 1);

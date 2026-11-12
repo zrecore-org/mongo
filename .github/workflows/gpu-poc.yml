@@ -152,8 +152,7 @@ jobs:
         working-directory: poc/gpu
         continue-on-error: true
         run: |
-          ./run.sh poc8_selftest precise || echo "::warning title=POC 8 df64 self-test (fma variant) on lavapipe::FAILED, see the step log"
-          ./run.sh poc8_selftest nofma || echo "::warning title=POC 8 df64 self-test (no-fma variant) on lavapipe::FAILED, see the step log"
+          ./run.sh poc8_selftest auto || echo "::warning title=POC 8 df64 self-test on lavapipe::no df64 variant passed, see the step log"
 
       - name: POC 1, df64 correctness without fma (informational)
         working-directory: poc/gpu
@@ -223,7 +222,7 @@ jobs:
         working-directory: poc/gpu
         continue-on-error: true
         run: |
-          ./run.sh poc8_selftest precise || echo "::warning title=POC 8 df64 self-test (fma variant) on NVIDIA::FAILED, see the step log"
+          ./run.sh poc8_selftest auto || echo "::warning title=POC 8 df64 self-test on NVIDIA::no df64 variant passed, see the step log"
           ./run.sh poc8_selftest nofma || echo "::warning title=POC 8 df64 self-test (no-fma variant) on NVIDIA::FAILED, see the step log"
 
       - name: POC 1, df64 correctness (informational)
@@ -238,10 +237,25 @@ jobs:
         timeout-minutes: 10
         run: ./run.sh poc3_select
 
+      # Diagnostics for the T4 scaling problems recorded in RESULTS.md (radix select past 1M, radix sort cost per pass).
+      - name: "Diagnostics - radix select sweep and radix sort kernel profile"
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          ./run.sh poc3_select sweep
+          ./run.sh poc7_sort profile
+
       - name: "POC 7, radix sort - correctness and timing"
         working-directory: poc/gpu
         timeout-minutes: 10
         run: ./run.sh poc7_sort
+
+      - name: "POC 9, $stdDev accuracy and timing"
+        working-directory: poc/gpu
+        continue-on-error: true
+        timeout-minutes: 15
+        run: ./run.sh poc9_stddev
 
       - name: "POC 2, $sum timing (G=1 and G=16) and accuracy"
         working-directory: poc/gpu

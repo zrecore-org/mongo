@@ -11,7 +11,23 @@ static uint64_t bits(double d) { uint64_t b; memcpy(&b, &d, 8); return b; }
 
 #include "rsel.h"
 
-int main() {
+// T4 investigation: GPU time grows ~13x from 1M to 4M elements (4x the data) on the NVIDIA T4 but not on the M1.
+// Sweeps the workgroup cap and the number of passes at fixed n to see which one the time follows.
+static int sweep(Sel& g, const std::vector<double>& data) {
+    printf("sweep: median GPU ms (incl. PCIe copies) for 3 ranks\n%10s %8s %8s | %s\n", "n", "wg cap", "passes", "gpu ms (upload/gpu/read)");
+    for (size_t n : {1u << 20, 1u << 22, 1u << 24})
+        for (uint32_t cap : {256u, 1024u, 4096u, 16384u})
+            for (uint32_t passes : {1u, 8u}) {
+                g.maxWgs = cap; g.passes = passes;
+                std::vector<uint32_t> ranks = {(uint32_t)(n / 2), (uint32_t)(n * 9 / 10), (uint32_t)(n * 99 / 100)};
+                std::vector<double> tg, tu, tk;
+                for (int r = -2; r < 5; r++) { double t[3]; g.select(data.data(), n, ranks, t); if (r >= 0) { tg.push_back(t[0] + t[1] + t[2]); tu.push_back(t[0]); tk.push_back(t[1]); } }
+                printf("%10zu %8u %8u | %8.3f (%.2f/%.2f)\n", n, cap, passes, median(tg), median(tu), median(tk));
+            }
+    return 0;
+}
+
+int main(int argc, char** argv) {
     const uint32_t R = 3;
     const bool quick = getenv("GPU_POC_CORRECTNESS_ONLY") != nullptr;  // CI on a CPU Vulkan driver: no timing sweep
     const size_t maxN = quick ? 1u << 20 : 16u << 20;
@@ -53,6 +69,7 @@ int main() {
     }
     printf("correctness: %d/%d ranks equal std::nth_element (numeric ==)\n", cases - bad, cases);
 
+    if (argc > 1 && std::string(argv[1]) == "sweep") { sweep(g, data); g.shutdown(); return bad ? 1 : 0; }
     if (quick) { g.shutdown(); return bad ? 1 : 0; }
     printf("%10s | %10s %10s | %9s (upload/gpu/read) | speedup vs nth_element x3, vs sort\n", "n", "nth_elem x3", "std::sort", "gpu total");
     std::string csv = "n,nth3_ms,sort_ms,gpu_total_ms,upload_ms,gpu_ms,read_ms\n";
