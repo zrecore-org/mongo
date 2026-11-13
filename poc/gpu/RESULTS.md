@@ -386,12 +386,14 @@ Plan and pass bars: `slang/PLAN.md`. Everything here is local (M1, Apple clang, 
 - **Barriers and user atomics are not supported** by the C++ target (the bundled `cpu-target.md` says so, and slangc confirms: error E36107 on
   `GroupMemoryBarrierWithGroupSync`). `rsel_hist` (groupshared histogram, barriers, `InterlockedAdd`) therefore does **not** compile to C++ or
   to the experimental LLVM IR target, while `rsel_pick` (no barrier) does. The radix select's main kernel cannot share its source with a CPU twin as written;
-  a twin would need a different, barrier-free formulation. Kernels without barriers/atomics (the df64 arithmetic, `splitDouble`, a per-thread
-  `$sum` accumulation) do compile.
+  a twin would need a different, barrier-free formulation. **No production kernel here is barrier-free**: the `$sum`/`$stdDev` workgroup reduction
+  (`reduceAndStore` in `sum_common.glsl`, shared memory, `barrier()`, `atomicOr`) and the sort kernels (`sort_count/scan/scatter`) use them too, so none of
+  these kernels' entry points would compile to C++ either (the Slang ports of those were not attempted; the radix select hist is the one tested, and the reason is the same).
+  What does compile is the numeric helpers (df64 arithmetic, `splitDouble`), tested below as functions inside small test kernels, not inside the real `sum_*` kernels.
 - **`precise` is not preserved on the C++ target.** slangc warns on every use (E56005: "will be ignored ... may be optimized with fused/contracted
   arithmetic"), and the emitted C++ has no pragma or `volatile`. Whether the CPU twin matches therefore depends on the C++ compiler's flags.
 - Same df64 source, run on the CPU (generated C++) and the M1 GPU (SPIR-V through MoltenVK) on 65,536 identical inputs, compared bit for bit
-  (`slang/cpu_twin.cpp`, `slang/cpu_twin_split.cpp`, built by `slang/build_cpu_twin.sh`; Apple clang -O3, arm64):
+  (`slang/cpu_twin.cpp`, `slang/cpu_twin_split.cpp`, built by `slang/build_cpu_twin.sh`; **Apple clang -O3, arm64 only**; "default contraction" is clang's, which fuses within a statement):
 
   | op | default FP contraction | `-ffp-contract=off` |
   |---|---|---|
@@ -401,9 +403,11 @@ Plan and pass bars: `slang/PLAN.md`. Everything here is local (M1, Apple clang, 
   | `dfDiv` | differs (15% of words, up to 4e-9) | differs (9% of words, up to 3.7e-9) |
   | `dfSqrt` | differs (13%, up to 6.8e-13) | differs (13%, up to 6.8e-13) |
 
-  - Reading: the pieces `$sum` uses (`splitDouble` plus `dfAdd`) are bit-identical on the CPU twin. `dfMul` is bit-identical only with
+  - GCC was not tested. Its GNU-mode default is `-ffp-contract=fast`, which fuses across statements and could break even the Dekker split
+    (`c = 4097*a; hi = c - (c - a)`) that clang's per-statement default left intact, so "bit-identical under default contraction" for `twoProd`/`splitDouble` holds for clang only.
+  - Reading: the helpers `$sum` uses (`splitDouble` plus `dfAdd`) are bit-identical on the CPU twin. `dfMul` is bit-identical only with
     `-ffp-contract=off`, because the lost `precise` lets clang fuse `a.x*b.y + a.y*b.x`. So a CPU twin built from Slang C++ **requires per-file
-    `-ffp-contract=off`** (and the same for any other compiler) and the build must enforce it.
+    `-ffp-contract=off`** on every compiler (more so on GCC) and the build must enforce it.
   - `dfDiv` and `dfSqrt` are not bit-identical to the GPU in any build. That is not a defect of the twin: the device's divide and `inversesqrt` are allowed to
     be approximate, and the three drivers already disagreed with each other on these two (div worst 0.109, 0.106, 0.109; sqrt 0.332, 0.369, 0.345 x 2^-44 on M1, lavapipe, T4). Where the
     M1's difference comes from (fast-math in the Metal compile, or rsqrt) was not isolated. A differential oracle can be bit-exact for add, mul, split and the
@@ -423,6 +427,10 @@ and a small `slang_spirv` rule (`slang.bzl`). Results on this machine:
   the output is cacheable by content. (An earlier run of that determinism check was invalid because overriding `HOME` broke bazelisk and compared two empty
   hash files; it was redone without the override.)
 - slangc wrote nothing under `$HOME` during a clean build (checked by listing files changed after a marker).
+- The sandbox enforces declared inputs: removing `deps = ["df64_ops.slang"]` from `df64_precise` makes the build fail with "failed to find include file", so a
+  forgotten include is caught on macOS, not only under remote execution (the `.slang` files are symlinks into `../slang`).
+- The Bazel output equals the hand-built SPIR-V although it was compiled from a different source path, and the SPIR-V contains no path strings (0 matches for `/Users`,
+  `bazel`, `.slang`), so slangc embeds no file paths: that supports cache hits across machines, not only repeatability on one.
 - Not tested: the Linux exec platforms (no Linux Bazel here; the Linux slangc itself is exercised in CI), remote execution, Windows (assets exist: `windows-x86_64`, `windows-aarch64`).
 - Added one line to the root `.bazelignore` (`poc/gpu/bazel_slang`) so a nested module does not break `bazel build //...`.
 
@@ -436,13 +444,14 @@ and a small `slang_spirv` rule (`slang.bzl`). Results on this machine:
   lists BSL-1.0, MIT, Unlicense, CC-BY-4.0 and an NCSA-style license).
 - Build-time only: with precompiled SPIR-V (generated in Bazel, or checked in) the server needs no `slangc` at runtime; only the pg-strom style runtime specialization would.
 
-### Verdict for the Phase 1 kernel-language decision
-- Bazel: workable. A pinned tool, a ~25-line rule, byte-reproducible output, sandbox-safe. Open: Linux exec, remote exec, glibc floor, and the owner's policy answer.
-- CPU twin: partly. It works for barrier-free arithmetic (df64, split, the `$sum` accumulation) provided `-ffp-contract=off` is enforced, and it is
-  bit-exact there. It does **not** work for the radix select histogram or any kernel that uses barriers, groupshared memory or atomics, which is most of the
-  heavy kernels here. So the strongest claimed benefit ("one source for the kernel and its CPU oracle") holds for the numerics, not for the data-parallel structure.
-- Net: Slang is viable but the CPU-twin argument is much weaker than it first looked; GLSL remains the lower-risk choice unless the owners value Slang for
-  generics or its Metal path. A hybrid is possible: GLSL kernels plus a Slang (or plain C++) shared numerics header for the oracle.
+### Input for the Phase 1 kernel-language decision (not a decision; raise it with the user at design start)
+- Bazel: workable. A pinned tool, a ~25-line rule, sandbox-safe, byte-reproducible output that carries no paths. Open: Linux exec, remote exec, the glibc floor, and the owners' policy answer.
+- CPU twin: much narrower than the claim. Slang gives a **bit-exact CPU copy of the numeric helpers** (df64 add and mul, `twoProd`, `splitDouble`) provided
+  `-ffp-contract=off` is enforced, and it is bit-exact only on clang here. **No production kernel entry point compiles to C++**, because every one of them uses barriers,
+  shared memory or atomics. A usable oracle would therefore be a hand-written C++ loop that reproduces the kernel's reduction order and calls the Slang-generated helpers.
+- The comparison, the right way round: GLSL has no CPU path at all, so the numerics twin is the only thing the extra build dependency buys on this axis; what is left
+  (generics, one language for Metal and Vulkan, one preprocessor) is the pg-strom agent's case and was not re-measured here. Kernel correctness and speed were equal on M1, lavapipe and T4.
+  Whether the numerics twin is worth `slangc` in the build is for the Phase 1 design.
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
