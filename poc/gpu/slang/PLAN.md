@@ -4,27 +4,30 @@ Question (from RESULTS.md, "Slang vs GLSL"): kernel correctness and speed are se
 not: can Slang fit MongoDB's Bazel build, and does its CPU target give the "one source for the kernel and its CPU twin" benefit.
 
 ## A. CPU target (the claimed main benefit)
-Goal: run the *same* `rsel.slang` source on the CPU and check it against GPU output and `std::nth_element`.
-1. Find which CPU path works for this kernel: `-target cpp` / `host-cpp` (C++ source), `host-callable`, `shader-sharedlib`, `llvm-ir`.
-   Known risk: the kernel uses `groupshared` memory, `InterlockedAdd` and `GroupMemoryBarrierWithGroupSync`; the CPU targets run one
-   thread per call and may not support group barriers, in which case a kernel meant for both targets needs a restructure
-   (e.g. one group per call with an explicit loop over lanes).
-2. If it runs: harness drives the generated C++ over the same data and ranks, compare with the GPU result and `nth_element` (bit-exact).
-3. Record what had to change in the kernel, build steps, and generated-code size / dependencies (does it need slang runtime headers?).
-Pass: CPU-target output equals `nth_element` on the POC 3 data. Fail is a result too: record the blocker.
+The radix select is integer-only, so a CPU-target pass on it proves little. The risk is in the df64 code: contraction and
+reassociation in the generated C++. So the test is df64 first, rsel second.
+1. Read the bundled CPU-target docs (`~/tools/slang-2026.20/share/doc`) for groupshared, barrier and atomic support.
+2. Compile `df64.slang` / `selftest.slang` with `-target cpp` (source-emitting; `host-callable`/`sharedlib`/`exe` make slangc invoke its own
+   downstream C++ compiler, which cannot fit a hermetic or remote Bazel build, so try them once only to record that).
+3. Inspect what `precise` becomes in the C++ (pragma, volatile, nothing). Build the generated C++ with default flags and with `-ffp-contract=off`
+   (Apple clang on arm64 fuses `a*b - p` by default).
+4. Pass bar: CPU output is **bit-identical** to the recorded GPU outputs (M1, lavapipe, T4 produced the same df64 error figures), not just
+   within 2^-44; a drifting oracle is useless. Record the compile flags this forces on Bazel.
+5. Then the radix select on the CPU target against `nth_element`, noting any restructure needed for groupshared/barriers.
+6. Record every header the generated C++ includes (prelude headers would need vendoring and a license entry) and generated-code size.
 
 ## B. Bazel integration
-Goal: show a Bazel build can obtain a pinned `slangc` and compile `.slang` to SPIR-V as a build action, hermetically, on the
-platforms the server builds on (linux x86_64/aarch64, macOS arm64; Windows not assessed unless cheap).
-1. Read how the repo brings in prebuilt tools (`MODULE.bazel` http_archive/http_file, mdb-build-public mirror, SBOM and
-   `src/third_party/README.md` policy) and how `mongo_src_rules.bzl` could take a `slang_library` rule.
-2. Prove the mechanism in a standalone mini Bazel module under `poc/gpu/bazel_slang/` (NOT in the repo's MODULE.bazel): `http_archive` of the
-   release per platform with sha256, a small rule/genrule producing `.spv` from `.slang`, a test that the output validates and is
-   byte-identical to the hand-built one. Needs bazel (install via the repo's `buildscripts/install_bazel.py` or bazelisk into the scratchpad).
-3. Write up: what MongoDB's policy would require (mirror, fork, SBOM entry, license review: Apache-2.0 with LLVM exception plus
-   third-party notices in the release), build-time vs runtime use (precompiled SPIR-V checked in or generated at build, no runtime slangc),
-   Windows/other-platform gaps.
-Pass: `bazel build` of the mini module produces the same SPIR-V on this machine. CI on Linux is optional.
+A pinned `http_archive`/`http_file` of a prebuilt tool is already precedent in `MODULE.bazel` (`scip-clang`, wasm tarball), so do not
+re-prove the download. Test what is not proven, in a standalone mini module under `poc/gpu/bazel_slang/` (not the repo's MODULE.bazel):
+1. slangc's dynamic libraries (`libslang-compiler`, `libslang-glslang`) resolve when run as a sandboxed action (`--spawn_strategy=sandboxed`).
+2. Exec configuration: slangc passed via `tools =`, with an exec-platform `select` (remote workers are Linux; host is macOS here).
+3. Hermeticity: nothing written to `$HOME`, works under `--incompatible_strict_action_env`.
+4. Determinism: two clean builds give byte-identical `.spv` (the remote cache depends on it).
+5. Policy write-up: mirror on mdb-build-public, SBOM entry, license review (Apache-2.0 with LLVM exception), build-time-only use.
+Install bazelisk into the scratchpad, not the user's PATH. None of A or B needs the GPU (stay out of the lock queue).
 
 ## Out of scope
 Touching `MODULE.bazel`, `src/`, or vendoring Slang into the repo; running a full mongod build.
+
+## Status
+Done and written up in `poc/gpu/RESULTS.md` ("Slang: CPU target and Bazel integration"). Part A: CPU twin works for barrier-free df64 arithmetic with `-ffp-contract=off`; the radix select histogram cannot be compiled (barriers/atomics). Part B: pinned-tool Bazel build is sandbox-safe and byte-reproducible on macOS arm64.

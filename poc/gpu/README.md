@@ -48,6 +48,7 @@ redistributing anything.
 | SPIRV-Cross (Khronos) | `spirv-cross --msl`, used to inspect the Metal code MoltenVK generates (not part of the build) | Apache-2.0 | <https://github.com/KhronosGroup/SPIRV-Cross> |
 | Mesa (lavapipe / llvmpipe) | CPU Vulkan driver used in CI as a second implementation | MIT | <https://gitlab.freedesktop.org/mesa/mesa>, <https://www.mesa3d.org> |
 | Slang (`slangc` 2026.20, Shader Slang / Khronos) | Compiles `slang/rsel.slang` to SPIR-V for the GLSL-vs-Slang comparison only; not part of the build. Installed by the pg-strom fork's workflow, used here as an unmodified tool. | Apache-2.0 with LLVM exceptions | <https://github.com/shader-slang/slang> |
+| Bazel and Bazelisk (Bazel authors / Google) | `bazel_slang/` standalone module for the Slang build-integration experiment only; not part of the CMake build | Apache-2.0 | <https://github.com/bazelbuild/bazel>, <https://github.com/bazelbuild/bazelisk> |
 | NumPy | `verify_df64.py` | BSD-3-Clause | <https://numpy.org> |
 | CMake | Build system | BSD-3-Clause | <https://cmake.org> |
 | actions/checkout (GitHub) | CI | MIT | <https://github.com/actions/checkout> |

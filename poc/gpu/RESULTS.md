@@ -379,6 +379,71 @@ Ported `rsel_hist` and `rsel_pick` to Slang (`slang/rsel.slang`, slangc 2026.20,
   about the build dependency (`slangc` in MongoDB's third-party tree) and the one-source-for-kernels-and-CPU-oracle benefit.
   With the df64 self-test passing on all three drivers, the remaining Slang questions are not about kernel correctness: the build dependency, the Bazel integration and the CPU target.
 
+## Slang: CPU target and Bazel integration
+Plan and pass bars: `slang/PLAN.md`. Everything here is local (M1, Apple clang, Bazel 9.0.0 from a scratchpad bazelisk), no mongod build.
+
+### CPU target (`slangc -target cpp`): the "one source, CPU twin" claim
+- **Barriers and user atomics are not supported** by the C++ target (the bundled `cpu-target.md` says so, and slangc confirms: error E36107 on
+  `GroupMemoryBarrierWithGroupSync`). `rsel_hist` (groupshared histogram, barriers, `InterlockedAdd`) therefore does **not** compile to C++ or
+  to the experimental LLVM IR target, while `rsel_pick` (no barrier) does. The radix select's main kernel cannot share its source with a CPU twin as written;
+  a twin would need a different, barrier-free formulation. Kernels without barriers/atomics (the df64 arithmetic, `splitDouble`, a per-thread
+  `$sum` accumulation) do compile.
+- **`precise` is not preserved on the C++ target.** slangc warns on every use (E56005: "will be ignored ... may be optimized with fused/contracted
+  arithmetic"), and the emitted C++ has no pragma or `volatile`. Whether the CPU twin matches therefore depends on the C++ compiler's flags.
+- Same df64 source, run on the CPU (generated C++) and the M1 GPU (SPIR-V through MoltenVK) on 65,536 identical inputs, compared bit for bit
+  (`slang/cpu_twin.cpp`, `slang/cpu_twin_split.cpp`, built by `slang/build_cpu_twin.sh`; Apple clang -O3, arm64):
+
+  | op | default FP contraction | `-ffp-contract=off` |
+  |---|---|---|
+  | `dfAdd` | bit-identical | bit-identical |
+  | `dfMul` | **9.5% of output words differ** (12,468 of 131,072, up to 1.5e-8) | bit-identical |
+  | `twoProd`, `splitDouble` (fma and Dekker variants) | bit-identical | bit-identical |
+  | `dfDiv` | differs (15% of words, up to 4e-9) | differs (9% of words, up to 3.7e-9) |
+  | `dfSqrt` | differs (13%, up to 6.8e-13) | differs (13%, up to 6.8e-13) |
+
+  - Reading: the pieces `$sum` uses (`splitDouble` plus `dfAdd`) are bit-identical on the CPU twin. `dfMul` is bit-identical only with
+    `-ffp-contract=off`, because the lost `precise` lets clang fuse `a.x*b.y + a.y*b.x`. So a CPU twin built from Slang C++ **requires per-file
+    `-ffp-contract=off`** (and the same for any other compiler) and the build must enforce it.
+  - `dfDiv` and `dfSqrt` are not bit-identical to the GPU in any build. That is not a defect of the twin: the device's divide and `inversesqrt` are allowed to
+    be approximate, and the three drivers already disagreed with each other on these two (div worst 0.109, 0.106, 0.109; sqrt 0.332, 0.369, 0.345 x 2^-44 on M1, lavapipe, T4). Where the
+    M1's difference comes from (fast-math in the Metal compile, or rsqrt) was not isolated. A differential oracle can be bit-exact for add, mul, split and the
+    sum, but only tolerance-exact for div and sqrt.
+- Cost: the generated C++ for the df64 kernels is 5.8 to 6.4 KB. It includes `slang-cpp-prelude.h`, which pulls in three more headers (about 4,000 lines: `slang-cpp-scalar-intrinsics.h`,
+  `slang-cpp-types.h`, `slang-cpp-types-core.h`). Those four headers would have to be vendored, with a license entry (Slang is Apache-2.0 WITH LLVM-exception).
+  The generated include path is absolute; Bazel would need `-I` plus a rewritten include. The other CPU targets (`host-callable`, `sharedlib`, `exe`)
+  make slangc call its own downstream C++ compiler, which does not fit a hermetic or remote Bazel action; not pursued.
+
+### Bazel (`poc/gpu/bazel_slang/`, a standalone module; the repo's `MODULE.bazel` is untouched)
+`http_archive` per platform (macOS arm64, Linux x86_64 and aarch64, pinned sha256), an exec-configuration `slangc` chosen by `select` on the exec platform,
+and a small `slang_spirv` rule (`slang.bzl`). Results on this machine:
+- `bazel build` of `rsel_hist`, `rsel_pick`, `df64_precise`, `df64_nofma` succeeds under `--spawn_strategy=sandboxed`: slangc and its dylibs
+  (`libslang-compiler`, `libslang-glslang`) resolve inside the macOS sandbox with an empty action environment (`use_default_shell_env = False`,
+  `--incompatible_strict_action_env`).
+- Output is byte-identical to the hand-built SPIR-V for all four files, and two clean builds (`bazel clean`, rebuild) gave identical SHA-256 hashes, so
+  the output is cacheable by content. (An earlier run of that determinism check was invalid because overriding `HOME` broke bazelisk and compared two empty
+  hash files; it was redone without the override.)
+- slangc wrote nothing under `$HOME` during a clean build (checked by listing files changed after a marker).
+- Not tested: the Linux exec platforms (no Linux Bazel here; the Linux slangc itself is exercised in CI), remote execution, Windows (assets exist: `windows-x86_64`, `windows-aarch64`).
+- Added one line to the root `.bazelignore` (`poc/gpu/bazel_slang`) so a nested module does not break `bazel build //...`.
+
+### What adopting Slang would require (policy and build, from reading the repo; nothing was changed in it)
+- Precedent exists: `MODULE.bazel` already pins prebuilt third-party tools with `http_file`/`http_archive` and mirrors them on `mdb-build-public`
+  (`scip-clang`, `libclang.dll`, the spidermonkey wasm tarball). `src/third_party/README.md` is about vendored *source* (fork in mongodb-forks, `import.sh`, SBOM);
+  a build-only prebuilt tool would follow the `MODULE.bazel` pattern, but whether it needs an SBOM entry or a fork is a question for the owners of that policy.
+- Footprint: the macOS release unpacks to `bin` 308 KB plus `lib` 174 MB (compiler, glslang, optional LLVM host). The Linux x86_64 asset is 83 MB; separate
+  `glibc-2.27` and `glibc-2.28` builds exist at about 29 MB, so the floor glibc of MongoDB's build hosts should be checked against the asset chosen.
+- Licenses in the release: Slang itself Apache-2.0 WITH LLVM-exception; bundled notices cover glslang, SPIRV-Tools, lz4, miniz, cmark, unordered_dense (the `LICENSES` directory also
+  lists BSL-1.0, MIT, Unlicense, CC-BY-4.0 and an NCSA-style license).
+- Build-time only: with precompiled SPIR-V (generated in Bazel, or checked in) the server needs no `slangc` at runtime; only the pg-strom style runtime specialization would.
+
+### Verdict for the Phase 1 kernel-language decision
+- Bazel: workable. A pinned tool, a ~25-line rule, byte-reproducible output, sandbox-safe. Open: Linux exec, remote exec, glibc floor, and the owner's policy answer.
+- CPU twin: partly. It works for barrier-free arithmetic (df64, split, the `$sum` accumulation) provided `-ffp-contract=off` is enforced, and it is
+  bit-exact there. It does **not** work for the radix select histogram or any kernel that uses barriers, groupshared memory or atomics, which is most of the
+  heavy kernels here. So the strongest claimed benefit ("one source for the kernel and its CPU oracle") holds for the numerics, not for the data-parallel structure.
+- Net: Slang is viable but the CPU-twin argument is much weaker than it first looked; GLSL remains the lower-risk choice unless the owners value Slang for
+  generics or its Metal path. A hybrid is possible: GLSL kernels plus a Slang (or plain C++) shared numerics header for the oracle.
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 4M for `$sum` and `$stdDev` with 16 groups on the M1), with the CPU path as automatic fallback (POC 4)

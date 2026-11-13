@@ -1,0 +1,35 @@
+# Standalone experiment: can Bazel fetch a pinned slangc and compile .slang to SPIR-V as a hermetic build action?
+# Not part of the MongoDB module. Pins mirror the release the pg-strom fork and gpu-poc.yml use (sha256 = GitHub's asset digests).
+module(name = "slang_poc", version = "0")
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.8.1")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+_BUILD = """
+package(default_visibility = ["//visibility:public"])
+filegroup(name = "slangc_files", srcs = glob(["bin/**", "lib/**", "share/**"]))
+filegroup(name = "slangc_bin", srcs = ["bin/slangc"])
+"""
+
+http_archive(
+    name = "slang_macos_aarch64",
+    build_file_content = _BUILD,
+    sha256 = "07fa8833fdbb343c3674c84fdd885910f495f3daaaa0c732b32980151e8b58c4",
+    urls = ["https://github.com/shader-slang/slang/releases/download/v2026.20/slang-2026.20-macos-aarch64.tar.gz"],
+)
+
+http_archive(
+    name = "slang_linux_x86_64",
+    build_file_content = _BUILD,
+    sha256 = "e863e568c204810d6e8bc31852f056aef6763c55ea9925db2db7affa060347c9",
+    urls = ["https://github.com/shader-slang/slang/releases/download/v2026.20/slang-2026.20-linux-x86_64.tar.gz"],
+)
+
+http_archive(
+    name = "slang_linux_aarch64",
+    build_file_content = _BUILD,
+    sha256 = "b0345743e2153d8c2bd33f56fb5696bcef63fc03513f054a1ae1b8d3dd0152a9",
+    urls = ["https://github.com/shader-slang/slang/releases/download/v2026.20/slang-2026.20-linux-aarch64.tar.gz"],
+)

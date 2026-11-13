@@ -1,0 +1,46 @@
+load(":slang.bzl", "slang_spirv")
+
+package(default_visibility = ["//visibility:public"])
+
+# The tool is chosen by the *exec* platform (where the action runs), not the target platform.
+alias(
+    name = "slangc_files",
+    actual = select({
+        "@platforms//os:macos": "@slang_macos_aarch64//:slangc_files",
+        "//conditions:default": ":slangc_files_linux",
+    }),
+)
+
+alias(
+    name = "slangc_files_linux",
+    actual = select({
+        ":linux_aarch64": "@slang_linux_aarch64//:slangc_files",
+        "//conditions:default": "@slang_linux_x86_64//:slangc_files",
+    }),
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = ["@platforms//os:linux", "@platforms//cpu:aarch64"],
+)
+
+alias(
+    name = "slangc",
+    actual = select({
+        "@platforms//os:macos": "@slang_macos_aarch64//:slangc_bin",
+        "//conditions:default": ":slangc_linux",
+    }),
+)
+
+alias(
+    name = "slangc_linux",
+    actual = select({
+        ":linux_aarch64": "@slang_linux_aarch64//:slangc_bin",
+        "//conditions:default": "@slang_linux_x86_64//:slangc_bin",
+    }),
+)
+
+slang_spirv(name = "rsel_hist", src = "rsel.slang", entry = "histMain", out = "rsel_hist.spv")
+slang_spirv(name = "rsel_pick", src = "rsel.slang", entry = "pickMain", out = "rsel_pick.spv")
+slang_spirv(name = "df64_precise", src = "df64.slang", deps = ["df64_ops.slang"], entry = "main", out = "df64_precise.spv")
+slang_spirv(name = "df64_nofma", src = "df64.slang", deps = ["df64_ops.slang"], entry = "main", out = "df64_nofma.spv", defines = ["NOFMA"])

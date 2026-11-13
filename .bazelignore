@@ -54,3 +54,6 @@ bazel-bin
 bazel-mongo
 bazel-out
 bazel-testlogs
+
+# Standalone Slang/Bazel integration experiment (its own module; see poc/gpu/slang/PLAN.md)
+poc/gpu/bazel_slang
