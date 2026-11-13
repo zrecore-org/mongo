@@ -69,6 +69,11 @@ env:
   # Same versions as the local Vulkan SDK the POCs were developed against.
   VULKAN_HEADERS_TAG: v1.3.283
   VOLK_TAG: vulkan-sdk-1.3.283.0
+  # Slang is used only for the GLSL-vs-Slang comparison (poc/gpu/slang). Same release the pg-strom fork pins; the sha256
+  # values are the digests GitHub reports for the release assets.
+  SLANG_VERSION: "2026.20"
+  SLANG_SHA256_X86_64: e863e568c204810d6e8bc31852f056aef6763c55ea9925db2db7affa060347c9
+  SLANG_SHA256_AARCH64: b0345743e2153d8c2bd33f56fb5696bcef63fc03513f054a1ae1b8d3dd0152a9
 
 jobs:
   linux-lavapipe:
@@ -161,6 +166,24 @@ jobs:
         run: |
           ./run.sh poc8_selftest auto || echo "::warning title=POC 8 df64 self-test on lavapipe::no df64 variant passed, see the step log"
 
+      # Informational: does the Slang-compiled df64 stay exact on this driver? (RESULTS.md, "Slang vs GLSL")
+      - name: POC 8, df64 self-test with Slang kernels (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        run: |
+          ARCH=${{ matrix.arch }}
+          D="$HOME/tools/slang-${SLANG_VERSION}"; mkdir -p "$D"
+          if [ "$ARCH" = aarch64 ]; then SHA="$SLANG_SHA256_AARCH64"; else SHA="$SLANG_SHA256_X86_64"; fi
+          curl -fsSL -o /tmp/slang.tar.gz "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-${ARCH}.tar.gz"
+          echo "$SHA  /tmp/slang.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/slang.tar.gz -C "$D"
+          SLANGC=$(find "$D" -type f -name slangc | head -n 1)
+          "$SLANGC" -v
+          slang/build_df64.sh "$SLANGC"
+          export GPU_POC_DF64_DIR=build/slang
+          ./run.sh poc8_selftest auto || echo "::warning title=POC 8 Slang df64 self-test on lavapipe::no Slang df64 variant passed, see the step log"
+          ./run.sh poc8_selftest nofma || echo "::warning title=POC 8 Slang df64 self-test (no-fma) on lavapipe::FAILED, see the step log"
+
       - name: POC 1, df64 correctness without fma (informational)
         working-directory: poc/gpu
         continue-on-error: true
@@ -238,6 +261,24 @@ jobs:
         run: |
           ./run.sh poc8_selftest auto || echo "::warning title=POC 8 df64 self-test on NVIDIA::no df64 variant passed, see the step log"
           ./run.sh poc8_selftest nofma || echo "::warning title=POC 8 df64 self-test (no-fma variant) on NVIDIA::FAILED, see the step log"
+
+      # Informational: does the Slang-compiled df64 stay exact on this driver? (RESULTS.md, "Slang vs GLSL")
+      - name: POC 8, df64 self-test with Slang kernels (informational)
+        working-directory: poc/gpu
+        continue-on-error: true
+        run: |
+          ARCH=x86_64
+          D="$HOME/tools/slang-${SLANG_VERSION}"; mkdir -p "$D"
+          if [ "$ARCH" = aarch64 ]; then SHA="$SLANG_SHA256_AARCH64"; else SHA="$SLANG_SHA256_X86_64"; fi
+          curl -fsSL -o /tmp/slang.tar.gz "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-${ARCH}.tar.gz"
+          echo "$SHA  /tmp/slang.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/slang.tar.gz -C "$D"
+          SLANGC=$(find "$D" -type f -name slangc | head -n 1)
+          "$SLANGC" -v
+          slang/build_df64.sh "$SLANGC"
+          export GPU_POC_DF64_DIR=build/slang
+          ./run.sh poc8_selftest auto || echo "::warning title=POC 8 Slang df64 self-test on NVIDIA::no Slang df64 variant passed, see the step log"
+          ./run.sh poc8_selftest nofma || echo "::warning title=POC 8 Slang df64 self-test (no-fma) on NVIDIA::FAILED, see the step log"
 
       - name: POC 1, df64 correctness (informational)
         working-directory: poc/gpu
