@@ -366,13 +366,18 @@ Ported `rsel_hist` and `rsel_pick` to Slang (`slang/rsel.slang`, slangc 2026.20,
 - df64 through Slang (`slang/df64_ops.slang`, `selftest.slang`, `df64.slang`, built by `slang/build_df64.sh`, run with `GPU_POC_DF64_DIR=build/slang ./run.sh poc8_selftest`):
   on the M1 both variants (fma and Dekker no-fma) pass all 6 probes (fma, twoProd, double -> df64 split, df64 mul/div/sqrt), and the
   worst-case errors equal the GLSL build's in every printed digit (split 0.0308, mul 0.186, div 0.109, sqrt 0.332, x 2^-44). The df64 operators
-  port 1:1 with `precise` on locals. Limit: the M1 also passes the GLSL build, and I have not shown that it would fail if `precise` were dropped, so this
-  does not prove Slang's `precise` is enough. The discriminating platform is lavapipe (its fma is not fused, and non-`precise` code failed there); that
-  needs a CI run and is not done.
-- Not measured: lavapipe, the T4, Slang's CPU target, Slang in the Bazel build, `-fp-mode precise` effects beyond the decoration check.
+  port 1:1 with `precise` on locals.
+  CI run 43369578273 (lavapipe x86_64 and aarch64, T4) gives the same agreement on the other two drivers:
+  - lavapipe: the fma variant fails exactly as the GLSL build does (twoProd and mul fail 4096/4096, worst 1.02e+06 and 1.04e+06 x 2^-44), and the Dekker
+    no-fma variant passes (mul 0.186, div 0.106, sqrt 0.369, identical to GLSL), so the startup gate selects the no-fma variant. This is the platform that
+    broke non-`precise` code, so Slang's `precise` evidently keeps the Dekker error terms from being contracted or reassociated there. (I did not build a
+    Slang df64 without `precise` to see it fail; the evidence is that the precise build passes where the GLSL precise build also passes.)
+  - T4: both variants pass all probes (mul 0.186, div 0.109, sqrt 0.345 x 2^-44); the gate selects fma.
+  Step names: "POC 8, df64 self-test with Slang kernels (informational)"; `slangc` 2026.20 is fetched with a pinned sha256 (the digests GitHub reports).
+- Not measured: a Slang df64 build without `precise`, Slang performance on the T4, Slang's CPU target, Slang in the Bazel build, `-fp-mode precise` effects beyond the decoration check.
 - Reading for Phase 1: nothing here argues against Slang on code quality or speed, and nothing argues for it on speed. The decision is still
   about the build dependency (`slangc` in MongoDB's third-party tree) and the one-source-for-kernels-and-CPU-oracle benefit.
-  Smallest next check if Slang is a serious candidate: run the Slang self-test on lavapipe and the T4 (CI).
+  With the df64 self-test passing on all three drivers, the remaining Slang questions are not about kernel correctness: the build dependency, the Bazel integration and the CPU target.
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
