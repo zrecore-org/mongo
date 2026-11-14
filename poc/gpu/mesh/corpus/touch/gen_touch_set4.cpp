@@ -46,7 +46,7 @@ static void randomMap(long long M[3][3], bool allowIdentity = true) {
     long long R[3][3] = {{0,0,0},{0,0,0},{0,0,0}}; for (int i = 0; i < 3; i++) R[i][perm[i]] = rnd(2) ? 1 : -1;
     int ns = rnd(4);
     for (int k = 0; k < ns; k++) {
-        int i = rnd(3), j = (i + 1 + rnd(2)) % 3; long long c = (rnd(2) ? 1 : -1) * (1 + rnd(3));
+        int i = rnd(3), j = (i + 1 + rnd(2)) % 3; long long sgn = rnd(2) ? 1 : -1; long long c = sgn * (1 + rnd(3));   // sequenced: operands of * are unsequenced (GCC x86_64 differs from clang)
         long long E[3][3] = {{1,0,0},{0,1,0},{0,0,1}}; E[i][j] = c; long long T[3][3];
         for (int a = 0; a < 3; a++) for (int b = 0; b < 3; b++) { T[a][b] = 0; for (int m = 0; m < 3; m++) T[a][b] += E[a][m] * R[m][b]; }
         memcpy(R, T, sizeof R);
@@ -93,9 +93,9 @@ static I3 randI(int lo, int hi) { return {lo + rnd(hi - lo + 1), lo + rnd(hi - l
 // kind 0 box, 1 tetrahedron, 2 octahedron, 3 sliver (flat tetrahedron / needle / wafer: strictly positive exact volume, extreme aspect ratio)
 static int sliverBase = 20, sliverSpan = 180;
 static Shape randBody(int kind) {
-    if (kind == 0) return boxAt(0, 0, 0, 1 + rnd(5), 1 + rnd(5), 1 + rnd(5));
+    if (kind == 0) { int bx = 1 + rnd(5), by = 1 + rnd(5), bz = 1 + rnd(5); return boxAt(0, 0, 0, bx, by, bz); }   // function arguments are unsequenced
     if (kind == 1) { long long a = 1 + rnd(6), b = 1 + rnd(6), c = 1 + rnd(6); return tetV({0,0,0}, {a,0,0}, {0,b,0}, {0,0,c}); }
-    if (kind == 2) return octAxes(1 + rnd(4), 1 + rnd(4), 1 + rnd(4));
+    if (kind == 2) { int ox = 1 + rnd(4), oy = 1 + rnd(4), oz = 1 + rnd(4); return octAxes(ox, oy, oz); }
     long long L = sliverBase + rnd(sliverSpan);
     switch (rnd(4)) {
         case 0: return tetV({0,0,0}, {L,0,0}, {0,L,0}, {rnd(L / 2) + 1, rnd(L / 2) + 1, 1});                  // flat sliver, height 1
