@@ -1,0 +1,8 @@
+C3D1
+name extrude_063
+kind extrude
+cls convex
+exp 0
+param holes 0
+param vec -22 8 23
+ring 2 9 -12 48 -9 27 -6 12 -3 3 0 0 3 3 6 12 9 27 12 48

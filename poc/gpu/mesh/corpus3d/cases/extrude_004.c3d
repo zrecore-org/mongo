@@ -1,0 +1,8 @@
+C3D1
+name extrude_004
+kind extrude
+cls star
+exp 0
+param holes 0
+param vec 0 0 52
+ring 2 7 163 22 37 122 12 142 -55 22 7 -77 37 -75 142 3

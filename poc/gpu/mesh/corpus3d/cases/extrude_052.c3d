@@ -1,0 +1,8 @@
+C3D1
+name extrude_052
+kind extrude
+cls collinear
+exp 0
+param holes 0
+param vec 0 0 4
+ring 2 5 0 0 3 3 6 6 9 9 12 12

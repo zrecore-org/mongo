@@ -1,0 +1,9 @@
+C3D1
+name revolve_452
+kind revolve
+cls sliver_axis_needle
+exp -30
+param deg 360
+param holes 0
+param seg 4
+ring 2 4 0 0 1 0 1 1073741824 0 1073741824

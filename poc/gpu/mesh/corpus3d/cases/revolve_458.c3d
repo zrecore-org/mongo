@@ -1,0 +1,9 @@
+C3D1
+name revolve_458
+kind revolve
+cls collinear_zero_area
+exp 0
+param deg 360
+param holes 0
+param seg 4
+ring 2 3 5 0 10 5 15 10

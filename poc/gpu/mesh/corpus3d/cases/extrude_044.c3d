@@ -1,0 +1,8 @@
+C3D1
+name extrude_044
+kind extrude
+cls box_shear
+exp 0
+param holes 0
+param vec 7 4 2
+ring 2 4 0 0 30 0 30 16 0 16

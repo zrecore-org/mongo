@@ -1,0 +1,68 @@
+kind      route      result    CORRECT  NEAR WRONG REFUSED NOAPI CRASH total
+dist_mm   mingap     distance       60     4     0       0     0     0    64
+dist_mm   own        distance       60     4     0       0     0     0    64
+dist_pm   own        distance       61     1     2       0     0     0    64
+extrude   manifold   solid          56     0     8       0     0     0    64
+extrude   own        solid          58     0     6       0     0     0    64
+extrude   own_cdt    solid          64     0     0       0     0     0    64
+measure   manifold   volume         54     5     5       0     0     0    64
+measure   manifold   area           63     1     0       0     0     0    64
+measure   manifold   bbox           64     0     0       0     0     0    64
+measure   manifold   centroid        0     0     0       0    64     0    64
+measure   manifold   closest         0     0     0       0    64     0    64
+measure   own        volume         64     0     0       0     0     0    64
+measure   own        area           63     1     0       0     0     0    64
+measure   own        centroid       63     1     0       0     0     0    64
+measure   own        bbox           64     0     0       0     0     0    64
+measure   own        closest        53     5     6       0     0     0    64
+mink      msum       solid          11     0    41       0     4     0    56
+mink      msumT      solid          50     0     2       0     4     0    56
+mink      hull       solid          54     0     2       0     0     0    56
+mink_nc   msum       solid           5     0    19       0     0     0    24
+mink_nc   msumT      solid          24     0     0       0     0     0    24
+revolve   manifold   solid          63     0     3       0     0     0    66
+tess      earcut     tess           58     0     0       0     0     0    58
+tess      cdt        tess           58     0     0       0     0     0    58
+
+non-CORRECT rows by class (verdict:count) and max ulps
+  dist_mm   mingap     distance  rand_separated         NEAR:4  max_ulps=1
+  dist_mm   own        distance  rand_separated         NEAR:4  max_ulps=1
+  dist_pm   own        distance  rand_out               NEAR:1  max_ulps=1
+  dist_pm   own        distance  sliver                 WRONG:2  max_ulps=8
+  extrude   manifold   solid     star                   WRONG:1  max_ulps=0
+  extrude   manifold   solid     star_hole              WRONG:1  max_ulps=0
+  extrude   own        solid     grid_holes             WRONG:6  max_ulps=0
+  extrude   manifold   solid     grid_holes             WRONG:1  max_ulps=0
+  extrude   manifold   solid     box_shear              WRONG:1  max_ulps=1
+  extrude   manifold   solid     collinear              WRONG:4  max_ulps=0
+  measure   manifold   centroid  random                 NOAPI:30  max_ulps=0
+  measure   manifold   closest   random                 NOAPI:30  max_ulps=0
+  measure   manifold   volume    random                 NEAR:5  max_ulps=2
+  measure   own        closest   random                 NEAR:5 WRONG:2  max_ulps=76
+  measure   manifold   area      random                 NEAR:1  max_ulps=1
+  measure   own        area      random                 NEAR:1  max_ulps=1
+  measure   own        centroid  random                 NEAR:1  max_ulps=1
+  measure   manifold   centroid  pythagorean_box        NOAPI:6  max_ulps=0
+  measure   manifold   closest   pythagorean_box        NOAPI:6  max_ulps=0
+  measure   manifold   centroid  pythagorean_shear      NOAPI:6  max_ulps=0
+  measure   manifold   closest   pythagorean_shear      NOAPI:6  max_ulps=0
+  measure   manifold   volume    far_offset             WRONG:5  max_ulps=2.68e+08
+  measure   manifold   centroid  far_offset             NOAPI:8  max_ulps=0
+  measure   manifold   closest   far_offset             NOAPI:8  max_ulps=0
+  measure   manifold   centroid  sliver                 NOAPI:8  max_ulps=0
+  measure   manifold   closest   sliver                 NOAPI:8  max_ulps=0
+  measure   own        closest   sliver                 WRONG:4  max_ulps=4.22e+08
+  measure   manifold   centroid  tie_closest            NOAPI:6  max_ulps=0
+  measure   manifold   closest   tie_closest            NOAPI:6  max_ulps=0
+  mink      msum       solid     random                 WRONG:39  max_ulps=0
+  mink      msum       solid     sliver                 WRONG:2  max_ulps=0
+  mink      msumT      solid     sliver                 WRONG:2  max_ulps=0
+  mink      hull       solid     sliver                 WRONG:2  max_ulps=0
+  mink      msum       solid     flat_summand           NOAPI:4  max_ulps=0
+  mink      msumT      solid     flat_summand           NOAPI:4  max_ulps=0
+  mink_nc   msum       solid     L_shape                WRONG:8  max_ulps=0
+  mink_nc   msum       solid     staircase              WRONG:5  max_ulps=0
+  mink_nc   msum       solid     L_long                 WRONG:6  max_ulps=0
+  revolve   manifold   solid     collinear_zero_area    WRONG:3  max_ulps=0
+
+cases per kind: {'dist_mm': 128, 'dist_pm': 64, 'extrude': 192, 'measure': 128, 'mink': 168, 'mink_nc': 48, 'revolve': 66, 'tess': 116}

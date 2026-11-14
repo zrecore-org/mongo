@@ -1,0 +1,9 @@
+C3D1
+name revolve_114
+kind revolve
+cls tri_axis_vertices_generic
+exp 0
+param deg 360
+param holes 0
+param seg 6
+ring 2 3 0 3 3 4 0 12

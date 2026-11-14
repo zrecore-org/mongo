@@ -1,0 +1,9 @@
+C3D1
+name extrude_041
+kind extrude
+cls grid_holes
+exp 0
+param holes 1
+param vec 20 19 42
+ring 2 4 0 0 56 0 56 56 0 56
+ring 2 4 21 35 35 35 35 21 21 21

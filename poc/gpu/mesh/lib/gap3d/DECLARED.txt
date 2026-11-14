@@ -1,0 +1,35 @@
+MP07 bars declared BEFORE any library ran (2026-11-14). Corpus: ../../corpus3d/ (integer-only; hashes in corpus3d/EXPECTED_SHA256.txt recorded before any runner existed).
+Common: a case's coordinates are int * 2^exp (exp in the case file); all oracles work on the integers with Boost cpp_int / cpp_rational (independent of every routine under test;
+the oracle source is oracle3d.h and shares no code with own3d.h or the runners). Verdicts per function and route: CORRECT / WRONG / REFUSED / CRASH (a crash or timeout of the
+case process; each case runs in one process, 60 s timeout). Degenerate inputs whose true answer is "no solid" (collinear profile, zero-area polygon) are CORRECT when the route
+returns empty / refuses, WRONG when it returns a non-empty solid or positive-area triangles.
+Valid solid result = closed (every edge in exactly two triangles, opposite directions), 2-manifold after exact-coordinate welding, outward (exact 6V > 0), no duplicate or exactly
+zero-area triangle counted as WRONG only if it breaks the exact checks below (zero-area triangles are counted and reported, not failed, except in extrude/revolve where they must not exist).
+EXTRUDE   (profile polygon with holes, vector (dx,dy,h), h>0): CORRECT = valid solid, exact 6V == 6*h*A (A exact shoelace area with holes), exact centroid ==
+          (Cx+dx/2, Cy+dy/2, h/2) with (Cx,Cy) the exact 2D centroid, and Euler characteristic == 2-2*holes. Routes: Manifold::Extrude (+ shear Transform for dx,dy);
+          own = earcut caps + side walls (own3d.h).
+REVOLVE   (profile, segments n, angle): exact cases are n=4 / 360 deg and n=3 / 270 deg (sind/cosd are exact at multiples of 90 deg, read in common.h): CORRECT = valid solid and
+          exact 6V == 6*n*sin(theta)*Mx with Mx the exact first moment about the axis of the profile clipped to x>=0 (theta=90 so sin=1; clip is done in rationals; crossings have
+          integer y by construction). Valid for through-axis profiles (clipped), axis-touching profiles and profiles with holes. Generic n (3,5,6,8,12,36,64,128): relative error of the
+          returned mesh's exact volume against n*sin(2pi/n)*Mx at 100 digits is reported in ulps; CORRECT if <= 16 ulps. Route: Manifold::Revolve only.
+TESSELLATE (planar 3D polygon with holes, ring orientation gives the normal): CORRECT = every output vertex is an input vertex (no Steiner), every triangle exactly coplanar with the
+          input plane and strictly positively oriented w.r.t. the polygon normal (zero-area triangles counted separately, not failed), and the 1-chain of triangle edges (each split at the
+          input vertices lying on it) minus the polygon ring edges is exactly zero. (Positive triangles + boundary chain = polygon boundary imply exact cover without overlap, so area and
+          coverage are exact.) Routes: earcut 3.2.4 and CDT 2.0.2 after an exact projection along the largest normal component (own glue).
+MINKOWSKI (convex): CORRECT = valid solid, every result vertex is a pairwise vertex sum, every pairwise sum lies on or inside every face plane of the result (exact orient3d); together
+          these prove result == hull(pairwise sums). Routes: Manifold::MinkowskiSum (needs two solids) and Manifold::Hull(pairwise sums) (accepts flat summands).
+          Non-convex (A non-convex, B convex box): CORRECT = exact volume equal to the exact volume of the union of boxes (A as a union of integer boxes) -- only if time allows.
+DISTANCE  (point-mesh = unsigned distance to the surface; mesh-mesh = distance between the SOLIDS, 0 if they touch, overlap or nest, which is what Manifold::MinGap returns):
+          oracle = exact rational squared distance D (minimum over vertex-feature, edge-edge and edge-triangle candidates, all in cpp_rational). A route returns a double d.
+          CORRECT = d == RN(sqrt(D)) bit-exactly; NEAR = within 4 ulps (reported, not correct); WRONG otherwise; a result of 0 when D>0 or >0 when D==0 is always WRONG.
+          Manifold::MinGap is called with searchLength = 4 * bounding box diagonal (above any distance, so it is never clamped). Own route = double brute force/BVH.
+MEASURES  volume, centroid, bbox, surface area, closest point. Oracle: exact rational V and centroid; bbox exact; area = sum of sqrt at 100 digits (bit-exact rational when every
+          triangle's squared normal is a perfect square: those cases are the "exact area" subset); closest point = exact rational closest point set. CORRECT = double equals RN(exact)
+          (per coordinate for centroid / bbox / closest point); NEAR within 4 ulps (of the value, or for a vector of the largest coordinate magnitude); else WRONG. Routes: Manifold
+          (Volume, SurfaceArea, BoundingBox; no centroid or closest-point query exists in the header, grep returned nothing) and own double code with Neumaier summation.
+Planted mutants of the checker (each a -DMUTANT=k build of selftest3d; its selftest, on the unit cube V=1 with centroid (1/2,1/2,1/2), a 3-4-0 shear box for area, a
+          distance case and a tessellation case, must FAIL for every k): 1 volume sign flipped, 2 centroid divided by 3V instead of 4V, 3 distance compares d instead of d^2 (the
+          squared value is rounded wrongly), 4 coplanarity check removed, 5 chain check ignores edge direction, 6 hull side test sign flipped, 7 closest-point tie set reduced to the first candidate.
+Speed: 1e5-triangle closed mesh (a 6-face grid cube with integer normal noise), one thread (Manifold built with MANIFOLD_PAR=OFF), operation only, median of 5, load average recorded in
+          speed_load.txt before each run; MinGap time includes its internal boolean.
+Effort estimates: person-weeks on the PARITY.md scale (S=1, M=3, L=8), +-2x, from the lines of code and hours this spike took, stated in REPORT.md with the basis.

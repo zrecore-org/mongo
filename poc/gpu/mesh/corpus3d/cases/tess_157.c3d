@@ -1,0 +1,7 @@
+C3D1
+name tess_157
+kind tess
+cls concave_comb
+exp 0
+ring 3 4 62 4 -91 23 -22 -65 11 -34 -101 50 -8 -127
+ring 3 4 48 -8 -111 21 -26 -93 25 -22 -81 52 -4 -99

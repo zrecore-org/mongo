@@ -1,0 +1,9 @@
+C3D1
+name revolve_118
+kind revolve
+cls rect_offaxis_generic
+exp 0
+param deg 360
+param holes 0
+param seg 64
+ring 2 4 1 -1 2 -1 2 6 1 6

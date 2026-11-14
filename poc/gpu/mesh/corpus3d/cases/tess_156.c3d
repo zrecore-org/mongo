@@ -1,0 +1,7 @@
+C3D1
+name tess_156
+kind tess
+cls concave_comb
+exp 0
+ring 3 4 60 27 62 78 36 71 54 24 95 36 15 86
+ring 3 4 48 21 80 58 26 85 66 30 77 56 25 72

@@ -1,0 +1,9 @@
+C3D1
+name revolve_071
+kind revolve
+cls tall_thin
+exp 0
+param deg 360
+param holes 0
+param seg 4
+ring 2 4 4 0 5 0 5 4096 4 4096

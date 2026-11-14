@@ -1,0 +1,9 @@
+C3D1
+name revolve_105
+kind revolve
+cls rect_on_axis_edge
+exp 0
+param deg 270
+param holes 0
+param seg 3
+ring 2 4 0 -2 3 -2 3 3 0 3

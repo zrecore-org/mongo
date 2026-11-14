@@ -1,0 +1,6 @@
+C3D1
+name tess_151
+kind tess
+cls collinear_vertices
+exp 0
+ring 3 10 -60 9 -89 -62 8 -88 -64 7 -87 -67 4 -87 -70 1 -87 -73 -2 -87 -71 -1 -88 -69 0 -89 -66 3 -89 -63 6 -89

@@ -1,0 +1,9 @@
+C3D1
+name revolve_093
+kind revolve
+cls through_axis_rect
+exp 0
+param deg 360
+param holes 0
+param seg 4
+ring 2 4 -2 4 1 4 1 8 -2 8

@@ -1,0 +1,9 @@
+C3D1
+name revolve_117
+kind revolve
+cls through_axis_rect_generic
+exp 0
+param deg 360
+param holes 0
+param seg 36
+ring 2 4 -4 4 3 4 3 11 -4 11

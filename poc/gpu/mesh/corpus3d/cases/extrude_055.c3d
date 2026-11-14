@@ -1,0 +1,8 @@
+C3D1
+name extrude_055
+kind extrude
+cls sliver
+exp -30
+param holes 0
+param vec 536870912 0 1073741824
+ring 2 4 0 0 1073741824 0 1073741824 1 0 1

@@ -1,0 +1,9 @@
+C3D1
+name revolve_075
+kind revolve
+cls star_offaxis
+exp 0
+param deg 360
+param holes 0
+param seg 4
+ring 2 7 35 0 25 14 18 0 20 -7 25 -11 30 -13 35 -6

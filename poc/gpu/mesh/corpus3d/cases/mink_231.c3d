@@ -1,0 +1,19 @@
+C3D1
+name mink_231
+kind mink
+cls flat_summand
+exp 0
+mesh A 4 4
+5 7 2
+13 7 2
+-9 21 2
+12 14 9
+0 2 1
+0 1 3
+1 2 3
+0 3 2
+pts B 4
+0 0 0
+4 0 0
+4 4 0
+0 4 0

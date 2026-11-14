@@ -1,0 +1,6 @@
+C3D1
+name tess_171
+kind tess
+cls collinear_zero_area
+exp 0
+ring 3 6 30 13 26 35 6 25 40 -1 24 45 -8 23 50 -15 22 55 -22 21

@@ -1,0 +1,9 @@
+C3D1
+name revolve_451
+kind revolve
+cls sliver_ring
+exp -30
+param deg 360
+param holes 0
+param seg 4
+ring 2 4 1073741824 0 1073741825 0 1073741825 1073741824 1073741824 1073741824

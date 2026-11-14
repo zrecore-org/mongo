@@ -1,0 +1,10 @@
+C3D1
+name revolve_092
+kind revolve
+cls star_hole_torus
+exp 0
+param deg 360
+param holes 1
+param seg 4
+ring 2 6 112 0 76 49 72 31 26 0 72 -39 114 -34
+ring 2 6 81 -1 72 -9 58 -5 55 0 72 9 90 0

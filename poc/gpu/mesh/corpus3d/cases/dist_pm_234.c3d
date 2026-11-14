@@ -1,0 +1,15 @@
+C3D1
+name dist_pm_234
+kind dist_pm
+cls rand_out
+exp 0
+mesh A 4 4
+2 9 -8
+11 9 -8
+2 30 -8
+2 9 16
+0 2 1
+0 1 3
+1 2 3
+0 3 2
+pt 6 57 -14
