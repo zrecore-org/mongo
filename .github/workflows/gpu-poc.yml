@@ -328,6 +328,80 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  # MP23 (poc/gpu/mesh/PLAN.md 'Exactness contract (tiers)', MP03): tier-3 measurement for Manifold v3.5.5. Informational (continue-on-error), never
+  # gating, no GPU. Builds the SERIAL variant with -ffp-contract=off (the M1 'A' build; Clipper2 is fetched by Manifold's CMake and its commit is
+  # checked against the pin), regenerates the G1 corpus (hard failure if any file differs from corpus/EXPECTED_SHA256.txt), scores it with
+  # oracle/score_library.py as the M1 run did, runs every pair twice, and prints per-class tables, the verdict diff against
+  # lib/manifold/scoring_results.tsv, the aggregate sha256 of the outputs and a "TIER 3 vs M1" line. Compare the aggregate hash of the x86_64 and
+  # aarch64 artifacts (report/aggregate_sha256.txt) for tier 3 between the two. Expected runtime: a few minutes (the M1 does everything in ~25 s).
+  mesh-manifold-xplat:
+    name: Mesh MP23, Manifold tier 3 ${{ matrix.arch }} (informational)
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      WORK: /home/runner/mp23_work
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            poc/gpu
+            src/third_party/boost
+          fetch-depth: 1
+
+      - name: Install packages
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ ninja-build make git curl ca-certificates python3
+
+      - name: Fetch the pinned Shewchuk predicates (scoring oracle)
+        run: poc/gpu/mesh/oracle/fetch.sh
+
+      - name: Fetch Manifold v3.5.5 and verify the pinned commit
+        run: poc/gpu/mesh/ci/mp23_manifold_xplat.sh fetch
+
+      - name: Build the scoring oracle and the corpus generator
+        timeout-minutes: 10
+        run: poc/gpu/mesh/ci/mp23_manifold_xplat.sh tools
+
+      - name: Generate the G1 corpus, verify against EXPECTED_SHA256.txt
+        run: poc/gpu/mesh/ci/mp23_manifold_xplat.sh corpus
+
+      - name: Build Manifold (serial, -ffp-contract=off) and manifold_runner
+        timeout-minutes: 20
+        run: poc/gpu/mesh/ci/mp23_manifold_xplat.sh build
+
+      - name: Score the G1 corpus (93 rows)
+        timeout-minutes: 10
+        run: poc/gpu/mesh/ci/mp23_manifold_xplat.sh score
+
+      - name: Run every pair a second time
+        run: poc/gpu/mesh/ci/mp23_manifold_xplat.sh rerun
+
+      - name: Tables, verdict diff, aggregate hash, tier-3 line
+        run: poc/gpu/mesh/ci/mp23_manifold_xplat.sh report
+
+      - name: Upload report, TSVs and outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp23-manifold-${{ matrix.arch }}
+          path: |
+            ${{ env.WORK }}/report/
+            ${{ env.WORK }}/score/run1/results.tsv
+            ${{ env.WORK }}/score/run2.tsv
+            ${{ env.WORK }}/score/run1/*.msh
+            ${{ env.WORK }}/*.log
+          if-no-files-found: warn
+          retention-days: 30
+
   # MP22b (poc/gpu/mesh/PLAN.md section MP22 / MP22b): acceptance run of the MP22 Geogram patch on set 5 (fresh seeds, 1100 pairs, 3300 rows per
   # build; generator and file hashes recorded before any run). Same matrix and same script as the MP21a job, as its own job so the two cannot delay
   # each other (the M1 needs about 1 minute per build for the scoring; one Geogram build + two incremental rebuilds + three scorings should be
