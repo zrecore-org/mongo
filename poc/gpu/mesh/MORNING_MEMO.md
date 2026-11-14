@@ -20,7 +20,7 @@ Everything below is recorded with evidence in `poc/gpu/RESULTS.md`; this is the 
 Closed alternatives: 512-bit integer plane booleans (800x slower than Shewchuk's adaptive predicate, kill criterion hit); Cherchi et al. 2022 (needs LGPL Indirect_Predicates headers, not scored); wrapping Geogram with guards (MP18/MP18b failed).
 
 ## Decisions waiting on you
-1. **Do you need fidelity below 1e-12 of mesh scale?** No: Manifold + re-centring, and the Geogram work stops. Yes: Geogram, which today needs the patch, the validator and the Linux issue resolved.
+1. ~~Do you need fidelity below 1e-12 of mesh scale?~~ **Answered by you: yes, "I want fidelity." The Geogram route is now the plan** (MP24 builds and scores it end to end). Original text: No: Manifold + re-centring, and the Geogram work stops. Yes: Geogram, which today needs the patch, the validator and the Linux issue resolved.
 2. **LGPL:** is LGPL header-only code ever acceptable? If yes, Cherchi et al. becomes scoreable.
 3. **Unwelded vertices:** refuse (what the validator does) or weld first?
 4. **Upstream:** if the Geogram maintainer replies on #413, do you want a pull request with our patch?
