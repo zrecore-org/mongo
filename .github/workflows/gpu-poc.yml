@@ -141,19 +141,23 @@ jobs:
           mesh/corpus/gen_corpus.sh --check
           mesh/corpus/gen_corpus.sh --selftest
 
-      - name: Mesh, MP09 orient3d filter in exact soft binary64 (host, then the device)
+      - name: Mesh, MP09 orient3d filter in exact soft binary64 (host)
         working-directory: poc/gpu
         timeout-minutes: 15
         continue-on-error: true
-        run: |
-          build/mesh/mp09_orient_filter host 800000
-          ./run.sh mesh/mp09_orient_filter device 400000
+        run: build/mesh/mp09_orient_filter host 800000
 
       - name: Select the lavapipe driver and show the device (informational)
         run: |
           ICD="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)"
           echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
           VK_ICD_FILENAMES="$ICD" vulkaninfo --summary | head -40
+
+      - name: Mesh, MP09 orient3d filter on the lavapipe device (informational; after the driver is selected)
+        working-directory: poc/gpu
+        timeout-minutes: 15
+        continue-on-error: true
+        run: ./run.sh mesh/mp09_orient_filter device 400000
 
       - name: POC 4, failure handling (no GPU)
         working-directory: poc/gpu
