@@ -153,3 +153,6 @@ Required dependencies: none beyond a C++17 compiler and CMake; TBB optional (`GE
 | EMBER binary (project page) | "binary implementation, contact the authors"; no source, no license | not downloaded, not used |
 | zalo/ember-csg (third-party port, d7f9674f) | MIT; but its geometry dependency has no license and its classification is not exact | inspected for its license only; not used |
 | juliusnehring/mesh-kernel (9f6a63ec, `integer-plane-geometry`) | **no LICENSE file** | inspected for its license only; no code read or copied; not used |
+
+## Cherchi et al. 2022 mesh booleans (audited 2026-11-14; `lib/cherchi/LICENSE_SURVEY.md`; header claim re-checked by me)
+Repo gcherchi/InteractiveAndRobustMeshBooleans at 7bd6c269 is MIT with vendored Cinolib (MIT), Shewchuk predicates (public domain), oneTBB/abseil/parallel-hashmap (Apache-2.0). **Attene's `Indirect_Predicates` (required, header-only) is LGPL-3.0-or-later** (header text at `arrangements/external/Indirect_Predicates/include/indirect_predicates.h` lines 14-23; its LICENSE file is LGPL-2.1, inconsistent). It cannot be dropped. Not fully permissive: a no-GPL/LGPL rule fails; whether LGPL header-only code is acceptable is a legal question. Input must be manifold and watertight. Not built or scored. Observation for legal review, not a conclusion.

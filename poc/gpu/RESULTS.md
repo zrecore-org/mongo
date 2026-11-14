@@ -675,6 +675,9 @@ Reading: a fixed-width 512-bit exact path is not a faster route to sub-1e-12 fid
 ### MP18 / MP18b: Geogram corner contact (`mesh/lib/geogram/mp18/REPORT.md`): scoped, root cause found, **not repairable by wrapping (kill rule applied)**
 Geogram v1.10.1 and `main` fail only vertex contact (24 of 240 rows in the 80-pair family; 165 of 8166 in a sweep); other contact classes pass. Guard v1 (exact trigger and post-check, retry with reversed vertex order) fixed the family but failed a held-out set (1137 rows: 138 unguarded FAIL; guarded 9 silent FAIL, 6 refused). Guard v2 (three vertex orders must agree exactly, else refuse), frozen before set 3 (1602 rows): 21 silent FAIL (two-point contact, all orders agree on the wrong answer) and 23.2% refusals on vertex-contact rows (limit 15%). Silent failures plus a high refuse rate mean wrapping does not make Geogram safe.
 
+### Cherchi et al. 2022 (indirect predicates): licence check only, not scored
+MIT repo, but the required Attene `Indirect_Predicates` headers are LGPL-3.0-or-later (verified in the header). Not permissive under the plan's no-GPL rule; left unscored and recorded (`mesh/LICENSES.md`).
+
 ### Wave 0 status
 Done locally: MP01, MP02 and MP06 meet the Wave 0 criteria on this machine (corpus byte-reproducible, every planted mutant caught, predicate oracles agree at 1e7, every SFCGAL function has a parity row).
 **Cross-architecture corpus agreement:** aarch64 matched on the first run; x86_64 differed in one file because of an unspecified argument-evaluation order in the generator (fixed, see MP01); the re-run on x86_64 is pending.
