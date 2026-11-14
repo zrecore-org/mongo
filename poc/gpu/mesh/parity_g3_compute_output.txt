@@ -21,43 +21,109 @@ bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
   G3 3D: 61-61 pw over 30 partial+write-ourselves rows (0 without an estimate)
   G3 2.5D: 2-2 pw over 2 partial+write-ourselves rows (0 without an estimate)
 
-B. G3 under the fidelity requirement (needs_exactness yes or maybe must be exact on the tested corpus)
+B. fidelity view, one threshold (<= 1e-12 of scale on the tested corpus). 'without' / 'with' per scenario.
+   'with' assumes own code meets the bar (see footnote in PARITY_G3.md); it does not depend on the MP24 scenario.
+                               3D bool pending MP24 counted MEETING |   3D bool pending MP24 NOT counted
+2D       maybe=all no   without  33.3%  with  77.8%   | without  33.3%  with  77.8%
+2D       maybe=decided  without  25.0%  with  77.8%   | without  25.0%  with  77.8%
+2D       maybe=all yes  without  16.7%  with  77.8%   | without  16.7%  with  77.8%
+3D       maybe=all no   without  20.5%  with  88.6%   | without  13.6%  with  88.6%
+3D       maybe=decided  without  20.5%  with  88.6%   | without  13.6%  with  88.6%
+3D       maybe=all yes  without  20.5%  with  88.6%   | without  13.6%  with  88.6%
+2.5D     maybe=all no   without   0.0%  with 100.0%   | without   0.0%  with 100.0%
+2.5D     maybe=decided  without   0.0%  with 100.0%   | without   0.0%  with 100.0%
+2.5D     maybe=all yes  without   0.0%  with 100.0%   | without   0.0%  with 100.0%
+3D+2.5D  maybe=all no   without  18.8%  with  89.6%   | without  12.5%  with  89.6%
+3D+2.5D  maybe=decided  without  18.8%  with  89.6%   | without  12.5%  with  89.6%
+3D+2.5D  maybe=all yes  without  18.8%  with  89.6%   | without  12.5%  with  89.6%
+
+B detail: maybe=all no , pending MP24 counted as meeting
 bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
-2D        36   5   7  11   5   3   2   3   13.9%   77.8%   63.9%
+2D        36  12   1  11   4   3   2   3   33.3%   77.8%   66.7%
+3D        44   9   0  23   7   5   0   0   20.5%   88.6%   72.7%
+2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
+3D+2.5D   48   9   2  24   8   5   0   0   18.8%   89.6%   72.9%
+
+B detail: maybe=all no , pending MP24 not counted
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36  12   1  11   4   3   2   3   33.3%   77.8%   66.7%
 3D        44   6   3  23   7   5   0   0   13.6%   88.6%   72.7%
 2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
 3D+2.5D   48   6   5  24   8   5   0   0   12.5%   89.6%   72.9%
 
-B-sens-1. as B, but counting exact-thin rows (3D booleans pending MP24, 2D offset) as exact
+B detail: maybe=decided, pending MP24 counted as meeting
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36   9   3  11   5   3   2   3   25.0%   77.8%   63.9%
+3D        44   9   0  23   7   5   0   0   20.5%   88.6%   72.7%
+2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
+3D+2.5D   48   9   2  24   8   5   0   0   18.8%   89.6%   72.9%
+
+B detail: maybe=decided, pending MP24 not counted
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36   9   3  11   5   3   2   3   25.0%   77.8%   63.9%
+3D        44   6   3  23   7   5   0   0   13.6%   88.6%   72.7%
+2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
+3D+2.5D   48   6   5  24   8   5   0   0   12.5%   89.6%   72.9%
+
+B detail: maybe=all yes, pending MP24 counted as meeting
 bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
 2D        36   6   6  11   5   3   2   3   16.7%   77.8%   63.9%
 3D        44   9   0  23   7   5   0   0   20.5%   88.6%   72.7%
 2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
 3D+2.5D   48   9   2  24   8   5   0   0   18.8%   89.6%   72.9%
 
-B-sens-2. as B, but only needs_exactness == yes counts as needing exactness
+B detail: maybe=all yes, pending MP24 not counted
 bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
-2D        36  11   2  11   4   3   2   3   30.6%   77.8%   66.7%
+2D        36   6   6  11   5   3   2   3   16.7%   77.8%   63.9%
 3D        44   6   3  23   7   5   0   0   13.6%   88.6%   72.7%
 2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
 3D+2.5D   48   6   5  24   8   5   0   0   12.5%   89.6%   72.9%
 
-Bars (suggested 70% without, 90% with):
-  A 2D: without 44.4% not met; with 86.1% not met
-  A 3D: without 20.5% not met; with 88.6% not met
-  B 2D: without 13.9% not met; with 77.8% not met
-  B 3D: without 13.6% not met; with 88.6% not met
+Headline range for B (min over scenarios .. max over scenarios), without / with:
+  2D: without 16.7%..33.3%  with 77.8%..77.8%
+  3D: without 13.6%..20.5%  with 88.6%..88.6%
 
-Rows counted 'covered' in A whose exactness is untested or thin (needs_exactness yes/maybe):
+Bit-exactness (third column, separate): covered rows with bit_exact == yes / N
+  2D: 5/36 = 13.9%; tested NOT bit-exact: 4 (Area 2D, Union 2D, Intersection 2D, Difference 2D)
+  3D: 1/44 = 2.3%; tested NOT bit-exact: 2 (Area 3D (surface area), Centroid 3D)
+
+Bars (suggested 70% without, 90% with), by scenario extremes:
+  2D: A 44.4/86.1; B best case without 33.3% (not met), B best case with 77.8% (not met)
+  3D: A 20.5/88.6; B best case without 20.5% (not met), B best case with 88.6% (not met)
+
+needs_exactness='maybe' decisions:
+  yes 2D   Distance 2D                                zero distance is the touching predicate; a rounded distance flips topology answers
+  yes 3D   Distance 3D                                same reason, 3D
+  yes 2D   Area 2D                                    sign and zero of area feed validity and orientation decisions
+  no  3D   Area 3D (surface area)                     output-only irrational value (square root per face); no decision consumes it
+  yes 3D   Volume                                     sign and zero of volume decide solid orientation and emptiness, the user's 3D-solid concern
+  yes 2D   IsValid 2D                                 a predicate: its yes/no answer must not depend on rounding
+  yes 2D   IsSimple                                   a predicate (self-touch detection)
+  no  2D   Centroid 2D                                derived value; no topological decision depends on it
+  no  3D   Centroid 3D                                derived value; no topological decision depends on it
+  no  2D   Length 2D                                  output-only irrational value (square roots)
+  no  3D   Length 3D                                  output-only irrational value (square roots)
+  yes 2D   Tessellate polygon (2D, with holes)        output geometry must cover the polygon exactly with no overlap or T-junction
+  yes 2D   Alpha shape (2D)                           alpha complexes depend on in-circle tests that must not be rounded
+  yes 2D   Optimal alpha shape (2D)                   same as alpha shape
+  no  2D   Simplify 2D (Douglas-Peucker class)        result is defined relative to a user tolerance far above 1e-12
+  no  2D   Rotate 2D                                  trigonometric coefficients are irrational; output rounding is inherent
+  no  3D   Rotate 3D (axis, X/Y/Z, around center)     same as rotate 2D
+  no  3D   Affine transform 3D                        double-valued coefficients; output rounding is inherent
+  yes 2.5D Utilities: equals / almostEqual (ordered/s an equality predicate
+  no  3D   Signed distance to mesh                    output-only distance value
+  no  3D   Closest point on mesh                      output-only point and distance
+  yes 3D   Winding number (generalized)               the sign of the winding number decides inside/outside
+
+Rows covered in A with bar untested or pending MP24 (needs_exactness yes/maybe):
   2D   Distance 2D [untested]
   2D   Covers 2D [untested]
   2D   IsSimple [untested]
   2D   Centroid 2D [untested]
   2D   Length 2D [untested]
-  3D   Union 3D (closed solids) [exact-thin]
-  3D   Intersection 3D (closed solids) [exact-thin]
-  3D   Difference 3D (closed solids) [exact-thin]
-  2D   Offset polygon (2D) [exact-thin]
+  3D   Union 3D (closed solids) [pending-MP24]
+  3D   Intersection 3D (closed solids) [pending-MP24]
+  3D   Difference 3D (closed solids) [pending-MP24]
   2.5D Constrained Delaunay triangulation (2.5D) [untested]
   2.5D Triangulate polygon (CG_Triangulate) [untested]
   2D   Simplify 2D (Douglas-Peucker class) [untested]
@@ -67,7 +133,7 @@ Rows in B with no sized exact route (UN):
   2D   Intersection 2D
   2D   Difference 2D
 
-Biggest remaining gaps: infeasible/unverified rows in counted groups:
+Remaining infeasible/unverified rows in counted groups:
   3D   infeasible-in-product  Extrude straight skeleton (polygon, angles, weights)
   3D   infeasible-in-product  Roof: hipped
   3D   infeasible-in-product  Roof: gable

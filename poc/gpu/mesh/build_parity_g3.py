@@ -14,12 +14,12 @@ GEO = ("RESULTS.md 'MP20' (set 4: 3150 rows, 0 FAIL), 'MP22b Linux result' (set 
 # idx -> dict(status=A status, est=new estimate text, basis=exact_basis, b_est=sized exact route in pw (text) for demoted rows,
 #             ev=evidence, kind=up/down/est/evidence, basis_note, est_basis)
 O = {
- 20: dict(basis="exact-tested", kind="evidence", ev=f"Boost intersects 192/192 CORRECT on the 192-pair exact-integer corpus. {G2D}"),
+ 20: dict(basis="meets-tested", kind="evidence", ev=f"Boost intersects 192/192 CORRECT on the 192-pair exact-integer corpus. {G2D}"),
  21: dict(kind="evidence", ev="MP09 exact-sign filter (RESULTS.md 'MP09', 1.35e9 device cases, 0 wrong definite signs) and MP10 box-pair emission exist, but no row-level 3D intersects function was built or tested, so the row is unchanged."),
- 24: dict(basis="inexact-tested", b_est="1", kind="evidence",
+ 24: dict(basis="fails-tested", b_est="1", kind="evidence",
           ev=f"Boost and Clipper2 area 205 correct / 1 WRONG (sliver30), Manifold 169 correct + 37 refused (coordinates >= 2^40). {G2D}. Functionally usable (A unchanged); not exact on the corpus (B).",
           est_basis="B route = exact integer accumulation; estimate S1 taken BY ANALOGY from MP07 exact volume/centroid S1 (not measured for 2D)"),
- 25: dict(basis="exact-tested", kind="evidence", ev=f"Manifold SurfaceArea 63 correct / 1 NEAR (1 ulp) / 0 wrong on 64 cases incl. 2^30 offsets. {G3D}"),
+ 25: dict(basis="meets-tested", kind="evidence", ev=f"Manifold SurfaceArea 63 correct / 1 NEAR (1 ulp) / 0 wrong on 64 cases incl. 2^30 offsets. {G3D}"),
  26: dict(status="partial", est="1", kind="down",
           ev=f"Manifold volume 54 correct / 5 NEAR / 5 WRONG (max 2.68e8 ulp at 2^30 offsets); Geogram volume is a plain double sum (MP04 probe, untested). Own exact cpp_int volume 64/0/0. {G3D}",
           est_basis="MP07 REPORT.md effort line: exact volume/centroid S1 (25-line cpp_int version)"),
@@ -28,14 +28,14 @@ O = {
           est_basis="no MP report sizes the duplicate-vertex pre-check (glue); left unestimated, not invented"),
  36: dict(kind="evidence", ev=f"Own centroid 63 correct / 1 NEAR (1 ulp); Manifold has no centroid API (64 NOAPI). Estimate S1 unchanged. {G3D}"),
  40: dict(basis="not-needed", kind="evidence", ev=f"Manifold bbox 64/64 exact. {G3D}"),
- 42: dict(basis="inexact-tested", b_est=None, kind="evidence", ev=f"Union 2D: Clipper2 188 ok / 4 invalid output, Boost 187 ok / 5 wrong (2^40 offsets), Manifold 112 ok / 41 wrong / 37 refused, of 206. No library has 0 wrong. {G2D}"),
- 43: dict(basis="inexact-tested", b_est=None, kind="evidence", ev=f"Intersection 2D: Clipper2 189 ok / 3 wrong, Boost 186 / 6 wrong, Manifold 101 / 54 wrong / 37 refused, of 206. {G2D}"),
- 44: dict(basis="inexact-tested", b_est=None, kind="evidence", ev=f"Difference 2D: Clipper2 189 ok / 3 invalid output, Boost 187 / 5 wrong, Manifold 100 / 55 wrong / 37 refused, of 206. {G2D}"),
- 45: dict(basis="exact-thin", kind="evidence", ev=f"Primary route is patched Geogram + validator + re-centring (user decision 2026-11-14, PLAN.md). Pieces tested: {GEO}. Manifold fails 15 of 72 valid G1 rows (MP03). Assembled pipeline NOT yet run (MP24 registered), so exactness is counted only in the sensitivity figure."),
- 46: dict(basis="exact-thin", kind="evidence", ev="Same as row 45 (intersection)."),
- 47: dict(basis="exact-thin", kind="evidence", ev="Same as row 45 (difference)."),
+ 42: dict(basis="fails-tested", b_est=None, kind="evidence", ev=f"Union 2D: Clipper2 188 ok / 4 invalid output, Boost 187 ok / 5 wrong (2^40 offsets), Manifold 112 ok / 41 wrong / 37 refused, of 206. No library has 0 wrong. {G2D}"),
+ 43: dict(basis="fails-tested", b_est=None, kind="evidence", ev=f"Intersection 2D: Clipper2 189 ok / 3 wrong, Boost 186 / 6 wrong, Manifold 101 / 54 wrong / 37 refused, of 206. {G2D}"),
+ 44: dict(basis="fails-tested", b_est=None, kind="evidence", ev=f"Difference 2D: Clipper2 189 ok / 3 invalid output, Boost 187 / 5 wrong, Manifold 100 / 55 wrong / 37 refused, of 206. {G2D}"),
+ 45: dict(basis="pending-MP24", kind="evidence", ev=f"Primary route is patched Geogram + validator + re-centring (user decision 2026-11-14, PLAN.md). Pieces tested: {GEO}. Manifold fails 15 of 72 valid G1 rows (MP03). PENDING MP24: the assembled pipeline has not run, so these three rows are shown both as meeting and as not meeting the bar."),
+ 46: dict(basis="pending-MP24", kind="evidence", ev="Same as row 45 (intersection)."),
+ 47: dict(basis="pending-MP24", kind="evidence", ev="Same as row 45 (difference)."),
  48: dict(kind="evidence", ev="MP03: Manifold refused open box, unwelded mesh, zero-area and duplicated triangle (NotManifold) but accepted a non-manifold-edge mesh and a self-intersecting mesh; Geogram refused nothing (14 of 21 accepted, 1 FAIL). MP21b validator: 18 REFUSED / 3 PASS / 0 FAIL, but no self-intersection check. Still partial, estimate unchanged (RESULTS.md MP03, MP04, MP21b)."),
- 50: dict(basis="exact-tested", kind="evidence", ev=f"Boost convex hull 206/206 CORRECT (Manifold 169 + 37 refused). {G2D}"),
+ 50: dict(basis="meets-tested", kind="evidence", ev=f"Boost convex hull 206/206 CORRECT (Manifold 169 + 37 refused). {G2D}"),
  51: dict(est="3", kind="est",
           ev=f"Manifold Hull of pairwise sums 54 correct / 2 WRONG (2^-30 slivers collapsed by its tolerance), so not exact. {G3D}",
           est_basis="MP07 REPORT.md effort line: exact convex hull M3 (3 pw); replaces MP06's 1"),
@@ -43,15 +43,15 @@ O = {
  61: dict(status="partial", est="3", kind="down",
           ev=f"Raw Manifold MinkowskiSum is Union(A, hull): 11 correct / 41 WRONG / 4 NOAPI of 56 (correct only when 0 is in B); with B translated 50/2 wrong; Hull(pairwise sums) 54/2 wrong (slivers); non-convex A raw 5/24, translated 24/24. {G3D}",
           est_basis="MP07 effort line: exact convex hull M3 (route is Hull of pairwise sums); non-convex B untested"),
- 62: dict(basis="exact-thin", kind="evidence", ev=f"Offset miter, 14 rectilinear cases: Boost, Clipper2, Manifold all 14/14 exact. Round joins, inward and non-rectilinear offset are NOT covered by the corpus (SFCGAL's offset uses round joins). {G2D}"),
- 64: dict(basis="exact-tested", kind="evidence", ev=f"earcut 206/206 correct (2D with holes) and 58/58 on planar 3D polygons; earcut does not refuse invalid input (9 of 20 nonsense). {G2D}; {G3D}"),
+ 62: dict(basis="meets-tested", kind="evidence", ev=f"Offset miter, 14 rectilinear cases: Boost, Clipper2, Manifold all 14/14 exact. Counted as meeting the bar on its tested corpus, but the corpus is narrow: round joins (what SFCGAL uses), inward and non-rectilinear offset are NOT covered. {G2D}"),
+ 64: dict(basis="meets-tested", kind="evidence", ev=f"earcut 206/206 correct (2D with holes) and 58/58 on planar 3D polygons; earcut does not refuse invalid input (9 of 20 nonsense). {G2D}; {G3D}"),
  65: dict(kind="evidence", ev=f"Tessellate planar 3D: earcut and CDT 58/58 each; S1 glue (40 lines) unchanged. {G3D}"),
  66: dict(kind="evidence", ev=f"Geogram CDT_2d was NOT tested. CDT (MPL-2.0, not counted) has 0 Delaunay violations in 909 edges, earcut 216, Manifold 59. {G2D}"),
  67: dict(kind="evidence", ev="Same as row 66: Geogram route untested; earcut is not Delaunay (MP08a)."),
  68: dict(status="partial", est="1-2", kind="up",
           ev=f"polypartition (MIT, licence read in MP08b) monotone partition 56 correct / 4 WRONG (polygons with holes return a non-monotone bridged ring). {H}",
           est_basis="MP08b verdict 5: monotone via polypartition plus a hole fix, 1-2 pw; replaces MP06's 3"),
- 69: dict(status="covered-by-permissive", est="", kind="up", basis="exact-tested",
+ 69: dict(status="covered-by-permissive", est="", kind="up", basis="meets-tested",
           ev=f"polypartition (MIT) Hertel-Mehlhorn 60/0 on 60 exact-integer cases under strict convexity (48/12 if collinear merges count as removable: definition difference); own HM on earcut also 60/0 (1 pw). Library is outside the six audited in MP06. Output is a valid partition, not proven identical to CGAL's. {H}",
           est_basis="no own code needed; MP08b own alternative was 1 pw"),
  70: dict(est="1-2", kind="est", ev=f"Greene 'adds 1-2 pw' on top of the monotone partition (row 68). {H}", est_basis="MP08b verdict 5; replaces MP06's 3; conditional on row 68"),
@@ -61,7 +61,7 @@ O = {
  80: dict(est="2-3", kind="est", ev=f"Own exact point-visibility sweep 60/0 (mutants caught). {H}", est_basis="MP08b verdict 4: 2-3 pw; replaces MP06's 8"),
  82: dict(kind="evidence", ev="Simplify was explicitly NOT covered by MP08a; documented-only."),
  84: dict(est="2", kind="est",
-          ev=f"Clipper2 Union as repair: 35 exact / 24 rounded (max rel. area error 4.3e-4) / 1 wrong (even-odd, two rings sharing an edge). Not exact. {H}",
+          ev=f"Clipper2 Union as repair: 35 exact / 24 rounded (max rel. area error 4.3e-4) / 1 wrong (even-odd, two rings sharing an edge). Not exact (rounds to the integer grid). {H}",
           est_basis="MP08b verdict 6: Clipper2 plus an overlap-merge post-pass, 2 pw; replaces MP06's 1"),
  111: dict(kind="evidence", ev="MP05: Embree is float32; 125 of 400 points 1e-8 off the surface classified differently from the double reference (RESULTS.md 'MP05'). Excluded group; no change."),
  112: dict(kind="evidence", ev=f"Own closest point 53 correct / 5 NEAR / 6 WRONG (4.22e8 ulp on slivers); Embree rtcPointQuery unchecked. Excluded group; no change. {G3D}"),
@@ -70,9 +70,35 @@ O = {
  122: dict(kind="evidence", ev="Own CPU BVH pair list equals brute force 31/31 (MP05); GPU LBVH pair lists equal the exact CPU reference on M1, lavapipe x2, T4 (MP10). Excluded group; no change."),
 }
 
+BIT = {20: "yes", 24: "no", 25: "no", 36: "no", 40: "yes", 42: "no", 43: "no", 44: "no", 50: "yes", 62: "yes", 64: "yes", 69: "yes"}
+# needs_exactness='maybe' rows: does the user's fidelity answer (given about 3D booleans) extend to them? B extends it to 2D rows and to these.
+MAYBE = {
+ 22: ("yes", "zero distance is the touching predicate; a rounded distance flips topology answers"),
+ 23: ("yes", "same reason, 3D"),
+ 24: ("yes", "sign and zero of area feed validity and orientation decisions"),
+ 25: ("no", "output-only irrational value (square root per face); no decision consumes it"),
+ 26: ("yes", "sign and zero of volume decide solid orientation and emptiness, the user's 3D-solid concern"),
+ 29: ("yes", "a predicate: its yes/no answer must not depend on rounding"),
+ 31: ("yes", "a predicate (self-touch detection)"),
+ 35: ("no", "derived value; no topological decision depends on it"),
+ 36: ("no", "derived value; no topological decision depends on it"),
+ 37: ("no", "output-only irrational value (square roots)"),
+ 38: ("no", "output-only irrational value (square roots)"),
+ 64: ("yes", "output geometry must cover the polygon exactly with no overlap or T-junction"),
+ 77: ("yes", "alpha complexes depend on in-circle tests that must not be rounded"),
+ 78: ("yes", "same as alpha shape"),
+ 82: ("no", "result is defined relative to a user tolerance far above 1e-12"),
+ 89: ("no", "trigonometric coefficients are irrational; output rounding is inherent"),
+ 90: ("no", "same as rotate 2D"),
+ 93: ("no", "double-valued coefficients; output rounding is inherent"),
+ 104: ("yes", "an equality predicate"),
+ 110: ("no", "output-only distance value"),
+ 112: ("no", "output-only point and distance"),
+ 121: ("yes", "the sign of the winding number decides inside/outside"),
+}
 rows = list(csv.DictReader(open(SRC)))
 base_cols = list(rows[0].keys())
-new_cols = ["status_parity", "exact_basis", "status_exact", "exact_route_pw", "evidence_level", "evidence_g3", "change_kind"]
+new_cols = ["status_parity", "exact_basis", "bit_exact", "maybe_decision", "maybe_reason", "status_exact", "exact_route_pw", "evidence_level", "evidence_g3", "change_kind"]
 out, changes = [], []
 for i, r in enumerate(rows):
     o = O.get(i, {})
@@ -80,12 +106,13 @@ for i, r in enumerate(rows):
     st = o.get("status", old_status)
     est = o["est"] if "est" in o else old_est
     if st in ("covered-by-permissive",):
-        basis = o.get("basis", "not-needed" if r["needs_exactness"] == "no" else "untested")
+        basis = o.get("basis", "not-needed" if r["needs_exactness"] == "no" else "untested")  # needed for 'maybe' rows depends on the policy (see compute script)
     else:
         basis = "n/a"
     if st == "covered-by-permissive":
-        if basis in ("exact-tested", "not-needed"): se = "covered-by-permissive"
-        elif basis in ("untested", "exact-thin"): se = "covered-exactness-unproven"
+        need = r["needs_exactness"] == "yes" or (r["needs_exactness"] == "maybe" and MAYBE[i][0] == "yes")
+        if (not need) or basis in ("meets-tested", "not-needed"): se = "covered-by-permissive"
+        elif basis in ("untested", "pending-MP24"): se = "covered-exactness-unproven"
         else: se = "write-ourselves" if o.get("b_est") else "unsized-exact-route"
     else:
         se = st
@@ -95,7 +122,8 @@ for i, r in enumerate(rows):
     if st != old_status and kind not in ("up", "down"): raise SystemExit("status changed without kind at %d" % i)
     row = dict(r)
     row["status"], row["own_code_estimate"] = st, est
-    row.update(status_parity=old_status, exact_basis=basis, status_exact=se,
+    row.update(status_parity=old_status, exact_basis=basis, bit_exact=BIT.get(i, "untested" if st == "covered-by-permissive" else "n/a"),
+               maybe_decision=MAYBE[i][0] if i in MAYBE else "", maybe_reason=MAYBE[i][1] if i in MAYBE else "", status_exact=se,
                exact_route_pw=o.get("b_est") or "", evidence_level=level, evidence_g3=o.get("ev", ""), change_kind=kind)
     out.append(row)
     if st != old_status or est != old_est or (se != st and se != "covered-exactness-unproven" and basis not in ("n/a",)) :
@@ -114,7 +142,7 @@ L = ["# G3 parity changelog (relative to parity.csv, MP06)", "",
      "Generated by `build_parity_g3.py` from the override table in that script; nothing here was run on a GPU and no library was built for this update. "
      "Rule applied: a status moves up only if a tested result backs it, down where a tested result contradicts the documented claim; documentation alone never upgrades. "
      "Evidence paths are relative to the repository root. `row` is the 0-based data-row index in parity.csv (header excluded).", "",
-     f"Status changes: **{len(ups)} up, {len(downs)} down**. Estimate-only changes: {len(est_only)}. Rows whose status is unchanged but whose status under the fidelity requirement (B) differs from the plain one: {len(exact_only)} (second table).", "",
+     f"Status changes: **{len(ups)} up, {len(downs)} down**. Estimate-only changes: {len(est_only)}. Rows whose status is unchanged but whose status under the fidelity requirement (B) differs from the plain one: {len(exact_only)} (third table; decisions on needs_exactness='maybe' rows are in the last table).", "",
      "## Status changes", "",
      "| row | operation | dim | old status | new status | old est (pw) | new est (pw) | evidence | person-week basis |", "|---|---|---|---|---|---|---|---|---|"]
 for c in ups + downs:
@@ -125,7 +153,7 @@ L += ["", "## Estimate-only changes (status unchanged)", "",
 for c in est_only:
     i, r = c[0], c[1]
     L.append(f"| {i} | {r['operation']} | {r['dim']} | {c[3]} | {c[4] or '-'} | {c[5] or '-'} | {ref(c)} | {c[8].get('est_basis','')} |")
-L += ["", "## Rows that are `covered` in the plain status but not exact on the tested corpus (fidelity view only; plain status unchanged)", "",
+L += ["", "## Rows that are `covered` in the plain status but outside the 1e-12 bar on the tested corpus (fidelity view only; plain status unchanged)", "",
       "| row | operation | dim | status | B status | exact basis | evidence | basis for exact-route estimate |", "|---|---|---|---|---|---|---|---|"]
 for c in exact_only:
     i, r = c[0], c[1]
@@ -135,5 +163,10 @@ L += ["", "## Evidence added without any status or estimate change", "",
 for i in sorted(O):
     if all(i != c[0] for c in changes):
         L.append(f"| {i} | {rows[i]['operation']} | {O[i]['ev']} |")
+L += ["", "## needs_exactness = 'maybe' rows: does the fidelity requirement apply? (B extends the user's answer)", "",
+      "The user's answer ('I want fidelity', 2026-11-14) was about 3D booleans. Definition B extends it to every 2D row and to the rows below; that extension is mine, not the user's, and is why the headline is a range (all maybe=yes vs all maybe=no). 'Decided' = the decision column.", "",
+      "| row | operation | dim | status (G3) | decision | reason |", "|---|---|---|---|---|---|"]
+for i in sorted(MAYBE):
+    L.append(f"| {i} | {rows[i]['operation']} | {rows[i]['dim']} | {out[i]['status']} | {MAYBE[i][0]} | {MAYBE[i][1]} |")
 open(LOG, "w").write("\n".join(L) + "\n")
 print("rows", len(out), "up", len(ups), "down", len(downs), "est-only", len(est_only), "exact-only", len(exact_only))
