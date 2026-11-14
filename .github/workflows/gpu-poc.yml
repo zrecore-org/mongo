@@ -249,6 +249,79 @@ jobs:
         timeout-minutes: 15
         run: ./run.sh poc2_sum accuracy
 
+  # MP21a (poc/gpu/mesh/PLAN.md): does the MP20 Geogram patch behave the same on Linux x86_64 and aarch64? Informational only: it is
+  # continue-on-error, nothing needs it, and it never runs on the T4 job. It is a separate job (not steps of linux-lavapipe) because it
+  # needs no Vulkan and a Geogram build takes minutes; as its own job it runs in parallel and cannot delay the T4 job.
+  mesh-geogram-xplat:
+    name: Mesh MP21a, patched Geogram ${{ matrix.arch }} (informational)
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      WORK: /home/runner/mp21_work
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            poc/gpu
+            src/third_party/boost
+          fetch-depth: 1
+
+      - name: Install packages
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ ninja-build make patch curl python3
+
+      - name: Fetch the pinned Shewchuk predicates (scoring oracle)
+        run: poc/gpu/mesh/oracle/fetch.sh
+
+      - name: Fetch Geogram v1.10.1 and verify the pinned tarball sha256
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh fetch
+
+      - name: Build Geogram, unpatched (permissive flags, static)
+        timeout-minutes: 15
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh build-unpatched
+
+      - name: Build Geogram with geogram_mp20.patch (permissive flags, static)
+        timeout-minutes: 15
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh build-patched
+
+      - name: Build the scoring oracle and the corpus generators
+        timeout-minutes: 10
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh tools
+
+      - name: Generate touch_* and set 4, verify against the recorded EXPECTED_SHA256 files
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh corpus
+
+      - name: Score unpatched and patched (touch_* 240 rows, first 600 rows of set 4)
+        timeout-minutes: 15
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh score
+
+      - name: Verdict tables and patched output hashes
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh report
+
+      - name: Upload TSVs, hashes and patched outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp21a-geogram-${{ matrix.arch }}
+          path: |
+            ${{ env.WORK }}/report/
+            ${{ env.WORK }}/score/*.tsv
+            ${{ env.WORK }}/score/log_*.log
+            ${{ env.WORK }}/score/patched_*_*/*.msh
+            ${{ env.WORK }}/*.log
+            ${{ env.WORK }}/geo_*/build.log
+          if-no-files-found: warn
+          retention-days: 30
+
   nvidia-t4:
     name: NVIDIA Tesla T4 (hosted GPU runner, billed)
     needs: linux-lavapipe
