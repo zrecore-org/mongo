@@ -193,8 +193,10 @@ Decisions made with the user:
   (4) Our own predicates and measures identical everywhere: hard.
 - **GPU focus:** predicates, intersects, distance, point-in-solid, volume and candidate culling first. Booleans stay on the
   CPU (neither Manifold nor Geogram has a hook for an external broad phase); a patched-library GPU boolean is not planned.
-- **Libraries:** only permissively licensed libraries are in-product candidates (Manifold Apache-2.0, Geogram BSD-3,
-  Embree Apache-2.0; Clipper2, Boost.Geometry, earcut, CDT and the in-tree S2 for 2D, all to be re-verified). CGAL and SFCGAL
+- **Libraries:** only permissively licensed libraries are in-product candidates (Manifold Apache-2.0, Embree Apache-2.0; Geogram BSD-3 **only as a build with
+  `GEOGRAM_WITH_TETGEN`, `GEOGRAM_WITH_TRIANGLE` and `GEOGRAM_WITH_HLBFGS` all OFF**, because it bundles TetGen (AGPL, academic use), Triangle (commercial use only by arrangement with the author)
+  and HLBFGS (non-commercial), all ON by default; Clipper2, Boost.Geometry and earcut for 2D; the in-tree S2 is spherical only; CDT is MPL-2.0, weak copyleft, and is not counted as permissive).
+  Run Manifold serially (`MANIFOLD_PAR=OFF`): the product path then needs no oneTBB, whose third-party notices flag a GPL-tagged entry for legal review. Details and sources: `poc/gpu/mesh/LICENSES.md`. CGAL and SFCGAL
   (GPL, or GPL when built with GPL CGAL) are excluded and not used even as oracles until legal answers.
   Oracles: Shewchuk predicates, Boost.Multiprecision exact rationals (already vendored), and a Geogram cross-check.
 - **Scope:** 3D first, 2D as a second track once the 3D library gate is passed.

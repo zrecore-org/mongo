@@ -544,8 +544,31 @@ Library evaluation and GPU acceleration for SFCGAL-class 3D (then 2D) geometry. 
 - 31 adversarial cases plus primitives, a many-small set and an optional few-large set; byte-reproducible (two runs identical, 75 files), with expected volumes computed exactly. `corpus_check` verifies 20 cases' exact expectations by an independent route and 30 tag checks; its three planted corruptions are all caught.
   It found one real defect in the generator (see `mesh/corpus/CORPUS.md`). Cross-platform hash equality (x86_64 and aarch64) is pending the CI step; Thingi10K is pinned but not fetched.
 
-### MP06: parity matrix and license audit: running
-Results will be added when `mesh/PARITY.md`, `mesh/parity.csv` and `mesh/LICENSES.md` are done.
+### MP06: parity matrix and license audit: done (documentation audit; nothing was built or run)
+Files: `mesh/parity.csv` (123 SFCGAL v2.3.0 rows; 84 count toward the percentages, the data-model, I/O and beyond-SFCGAL groups are excluded), `mesh/PARITY.md` (method, formula, sources with versions), `mesh/LICENSES.md` (license text read from each project's own file at a pinned tag).
+Written by a sub-agent; I re-derived the percentages from the CSV and checked the Geogram CMake defaults, the Triangle, TetGen and HLBFGS README texts and the S2 SBOM entry against the primary sources: all matched.
+
+| Bucket | rows | without write-ourselves (permissive libraries only) | with write-ourselves (everything except infeasible/unverified) | covered + partial |
+|---|---|---|---|---|
+| 2D | 36 | 44.4% | 86.1% | 69.4% |
+| 3D | 44 | 25.0% | 88.6% | 72.7% |
+| 2.5D | 4 | 50.0% | 100% | 75.0% |
+| 3D + 2.5D | 48 | 27.1% | 89.6% | 72.9% |
+
+- This is an early signal, not the G3 result (G3 comes after MP07 and MP08). Against the suggested bars (70% without, 90% with) neither bucket is there yet; about 15 of the small `partial` rows need only glue code (1 person-week each).
+- Every "covered" is a documentation claim from a header or doc that was read; behavior is tested later (MP03, MP04, MP08a). 33 cells are `unverified`, 31 of them Boost.Geometry, so the 2D figure is a lower bound until MP08a reads them; four rows are `status=unverified` (approximate medial axis, projected medial axis, convex decomposition, voxelization).
+- The `(GEOS)` and `(core)` PostGIS names in the CSV are from general knowledge; only the `CG_*`/`ST_*` names on the PostGIS SFCGAL page were read.
+- The sub-agent's estimate for closing the gaps is about 91 person-weeks (+-2x, on a stated S/M/L/XL scale that is not derived from SFCGAL's size), plus 32 more for the two XL items (straight skeleton and 3D alpha wrapping) if attempted. Treat as a rough ordering, not a schedule.
+- Biggest gaps: the straight skeleton family (no permissive implementation read), 3D alpha wrapping, exact 3D solid predicates and measures (where the GPU filter has to land), 3D constructions on open or non-manifold input (Manifold refuses non-manifold input; Geogram needs closed meshes), and the 2D CGAL-only algorithms (partitions, visibility, alpha shapes).
+- **License findings (observations for legal review, not conclusions):**
+  - **Geogram bundles restricted components that are compiled by default.** `GEOGRAM_WITH_TETGEN`, `GEOGRAM_WITH_TRIANGLE` and `GEOGRAM_WITH_HLBFGS` are all `ON` in its root CMake at v1.10.1. TetGen's README says AGPL ("Free for academic use, contact copyright owners..."), Triangle's says commercial distribution is permissible "ONLY BY DIRECT ARRANGEMENT WITH THE AUTHOR", HLBFGS's says "freely available for non-commercial purposes". Geogram's own code is BSD-3-Clause. The parity matrix scores the build with all three OFF; that build loses tetrahedralization and Triangle-based Delaunay, and `remesh_smooth` falls back to Lloyd iterations.
+  - CDT is MPL-2.0 (weak copyleft) and is not counted as permissive. oneTBB's third-party file has one entry marked as possibly under GPL, flagged for review; the serial Manifold build needs no TBB.
+  - The S2 in the tree is spherical (it never decides a row); the SBOM pins a 2015 s2geometry commit while the files were imported in 2012 and there is no import script. Boost.Geometry is not in the vendored Boost 1.88.0.
+  - Manifold v3.5.5 and Embree: Apache-2.0; Clipper2, Boost.Geometry: BSL-1.0; earcut: ISC; nanobind is not required by Manifold.
+
+### Wave 0 status
+Done locally: MP01, MP02 and MP06 meet the Wave 0 criteria on this machine (corpus byte-reproducible, every planted mutant caught, predicate oracles agree at 1e7, every SFCGAL function has a parity row).
+**Not yet confirmed:** x86_64 and aarch64 corpus hash agreement. `EXPECTED_SHA256.txt` was produced on macOS arm64 with Apple clang; GCC and libstdc++ have not built any mesh code yet. The informational CI steps will be the first check, and their step logs must be read (they use `continue-on-error`).
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).

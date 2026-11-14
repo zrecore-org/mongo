@@ -51,15 +51,15 @@ Pass bar: every planted mutant is caught; Shewchuk and the rational recompute ag
 Question: how much of SFCGAL v2.3.0 do the permissive options cover?
 Steps: every SFCGAL function (types, predicates and measures, constructive, skeleton/alpha/visibility, transforms) mapped to Manifold, Geogram, Embree,
 Clipper2, Boost.Geometry, earcut, CDT, the in-tree S2, write-ourselves (with a size estimate) or infeasible; columns for "needs exactness" and "GPU-able";
-every license re-verified at a pinned tag from the project's own LICENSE file (agent claims are not evidence).
+every license re-verified at a pinned tag from the project's own LICENSE file (agent claims are not evidence). Done 2026-11-14; findings: Geogram bundles restricted components (see MP04), CDT is MPL-2.0 (weak copyleft, not counted as permissive), the in-tree S2 is spherical only, Boost.Geometry is not vendored.
 Pass bar: every SFCGAL function has a row; coverage percentages for 3D and 2D separately, with and without write-ourselves items.
 
 Wave 0 is done when: the corpus is byte-reproducible, every mutant is caught, the predicate oracles agree, and every SFCGAL function has a parity row.
 
 ## Wave 1 (after Wave 0)
-- **MP03 Manifold** (pinned tag; serial and TBB builds): API fit (`MeshGL`), op coverage, robustness over the adversarial corpus, speed on both workload shapes, tier-2 determinism
+- **MP03 Manifold** (pinned tag; serial build is the product path, `MANIFOLD_PAR=OFF`; a TBB build only to measure what parallelism would add, since oneTBB's third-party notices flag a GPL-tagged entry for legal review): API fit (`MeshGL`), op coverage, robustness over the adversarial corpus, speed on both workload shapes, tier-2 determinism
   (1/4/8 threads, repeats, `-ffp-contract=off`), tier-3 measurement (x86_64 vs aarch64 on the lavapipe CI runners). Read PRs #1606, #1623, #1594 to see what its CI determinism check covers; test booleans on fixed coordinates separately from trig-based constructors.
-- **MP04 Geogram** (exact expansion arithmetic booleans): same method plus conversion cost into its own `Mesh`, closed-mesh requirement, bundled-license audit, cross-platform determinism.
+- **MP04 Geogram** (exact expansion arithmetic booleans): same method plus conversion cost into its own `Mesh`, closed-mesh requirement, cross-platform determinism. **Permissive build only**: configure with `GEOGRAM_WITH_TETGEN=OFF`, `GEOGRAM_WITH_TRIANGLE=OFF`, `GEOGRAM_WITH_HLBFGS=OFF` (all ON by default; TetGen is AGPL/academic, Triangle is commercial-by-arrangement, HLBFGS is non-commercial; see `LICENSES.md`). The restricted sources arrive in the fetched archive under `build/` but are never compiled; after building, `nm`/the link map of every artifact must show no tetgen, triangle or HLBFGS symbols, and that check is part of the POC's pass bar. Expect reduced functionality (no tetrahedralization, no Triangle-based Delaunay, `remesh_smooth` falls back to Lloyd iterations).
 - **MP05 Embree + own deterministic CPU BVH** (`cpu/bvh_ref.cpp`): the multi-core CPU baseline the GPU must beat, and the CPU twin for MP10.
 - **MP09 GPU exact-sign filters** (`gpu/orient_filter.comp`, `gpu/orient_exact_int.comp`): orient2d/orient3d as a df64/fp32 filter with a conservative error bound including the binary64-to-df64 splitting loss
   (`precise`, no FMA contraction) returning +, -, uncertain; and an exact integer path extending `shaders/f64soft.inc`. Compared with Shewchuk.
@@ -72,7 +72,7 @@ Wave 0 is done when: the corpus is byte-reproducible, every mutant is caught, th
 
 ## Waves 2 and 3 (details at their start; gates G3, G4, G5)
 MP10 deterministic LBVH and pair emission (32-bit atomics only, count-then-write, canonical sort; the gating bar is the final answer with GPU on == CPU only); MP07 gap-fill spikes (extrude, tessellate, Minkowski, exact distance, measures);
-MP08a 2D permissive coverage (Clipper2, Boost.Geometry, earcut, CDT, the in-tree S2); MP08b hard 2D/3D ops (straight skeleton, medial axis, alpha shapes, visibility, polygon repair, 3D alpha wrap; most are CGAL-only in SFCGAL);
+MP08a 2D permissive coverage (Clipper2, Boost.Geometry, earcut, the in-tree S2; CDT only as a comparison, it is MPL-2.0); read the 31 Boost.Geometry parity cells that MP06 left unverified; MP08b hard 2D/3D ops (straight skeleton, medial axis, alpha shapes, visibility, polygon repair, 3D alpha wrap; most are CGAL-only in SFCGAL);
 MP11 GPU pair list + filtered triangle-triangle test + CPU exact tail; MP12 point-in-solid and volume by exact accumulation (extends the exact add of `f64soft.inc` with an exact multiply); MP13 fault injection, shadow check, crossover sweep (baseline = best multi-core CPU);
 MP14 BSON representation, 3D bounding-box index simulation (100% recall), runtime lifecycle, API sketch (extension stages first, core `$mesh*` expressions as the fallback).
 **G3** parity (3D and 2D separately; suggested bars 70% without write-ourselves, 90% with). **G4** stop at a CPU-only product if the GPU is not at least 2x faster than the best multi-core CPU at plausible sizes; never ship the GPU if the shadow check ever disagrees.
