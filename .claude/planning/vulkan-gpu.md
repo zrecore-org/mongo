@@ -14,9 +14,10 @@ Decisions made with the user:
   "Proof-of-concept plan" below).
 - df64: accuracy-preserving fp64 substitute.
 
-This plan is saved to `/Users/aalbino/.claude/plans/logical-honking-ripple.md` because plan mode only
-allows writing there. On approval, copy it to `.claude/planning/vulkan-gpu.md` in the repo as requested.
-No code exists yet: there is no `src/mongo/gpu`, no Vulkan, no SPIR-V and no VMA in the tree.
+Status (2026-11-14): the standalone proofs of concept (POC 0 to 12) are implemented under `poc/gpu/` and measured;
+results, retractions and the Phase 1 go/no-go (conditional go, opt-in) are in `poc/gpu/RESULTS.md`. Nothing exists in
+`src/`: there is no `src/mongo/gpu`, no Vulkan, no SPIR-V and no VMA in the tree. A 3D mesh workstream was added on
+2026-11-14 (see "3D mesh workstream" below; its detailed plan is `poc/gpu/mesh/PLAN.md`).
 
 ## Proof-of-concept plan (what gets implemented now)
 
@@ -73,7 +74,9 @@ about 5-10x.
 | - | FLE2 HMAC-SHA256 | `crypto/fle_crypto.cpp` | Not recommended: small batches, key exposure, FIPS. |
 
 Poor fits (non-goals): oplog application, transport, per-document validation, matcher tree, FTS, hash
-join, MD5, small-key hashes, BSON compare, geo (row-based), Decimal128. Vector search/ANN is not in
+join, MD5, small-key hashes, BSON compare, geo (row-based matching of 2D shapes), Decimal128. (3D mesh booleans and
+queries are a different workload: large per-operation compute over whole meshes, batched across documents. They are
+evaluated separately in "3D mesh workstream" and are not covered by this non-goal.) Vector search/ANN is not in
 this tree. It lives in out-of-tree extensions via `extension/public/api.h`, so a GPU ANN backend would
 be an extension.
 
@@ -170,6 +173,39 @@ and #5. The tree has almost no SIMD today (`fts/unicode/byte_vector_*`).
 - jstests with a `requires_gpu` tag and a `gpuAccelerationMode: force` suite over the aggregation correctness tests.
 - `mongo_cc_benchmark` sweeps batch size end to end to produce the break-even table.
 
+## 3D mesh workstream (added 2026-11-14)
+
+Question: can MongoDB offer SFCGAL-class 3D (and 2D) geometry operations (booleans, volume, extrude, tessellate,
+Minkowski, skeleton, distance, and as many SFCGAL functions as possible), GPU-accelerated with a CPU fallback? MongoDB
+has no 3D today: geo is 2D (planar and S2 spherical), GeoJSON altitude is parsed and ignored (`src/mongo/db/geo/geoparser.cpp:195`),
+and no aggregation expression returns geometry. Detailed plan, POC list and gates: `poc/gpu/mesh/PLAN.md`. Standalone
+POCs only under `poc/gpu/mesh/`; nothing under `src/`.
+
+Decisions made with the user:
+- **Where it lives:** a MongoDB extension (a loaded `.so` using the Extensions API in `src/mongo/db/extension/`: aggregation
+  stages, frozen C ABI, GPG-signed, released independently), with vendoring into the core server as the fallback. The
+  extension API adds stages, not expression operators, and the docs call it a work in progress with Rust as the only
+  production-supported SDK; those are risks the extension POC (MP14a) must settle. The `src/mongo/gpu/` architecture
+  above applies to the core fallback.
+- **Exactness contract (tiers):** (1) GPU on equals CPU-only, same build: hard. (2) Same binary and input give the same
+  bytes at any thread count: hard, and gates the library choice. (3) Library boolean output identical across x86_64 and
+  arm64: measured and reported, not required (replication records results, not pipelines, and `$sin/$cos/$pow` already use libm).
+  (4) Our own predicates and measures identical everywhere: hard.
+- **GPU focus:** predicates, intersects, distance, point-in-solid, volume and candidate culling first. Booleans stay on the
+  CPU (neither Manifold nor Geogram has a hook for an external broad phase); a patched-library GPU boolean is not planned.
+- **Libraries:** only permissively licensed libraries are in-product candidates (Manifold Apache-2.0, Geogram BSD-3,
+  Embree Apache-2.0; Clipper2, Boost.Geometry, earcut, CDT and the in-tree S2 for 2D, all to be re-verified). CGAL and SFCGAL
+  (GPL, or GPL when built with GPL CGAL) are excluded and not used even as oracles until legal answers.
+  Oracles: Shewchuk predicates, Boost.Multiprecision exact rationals (already vendored), and a Geogram cross-check.
+- **Scope:** 3D first, 2D as a second track once the 3D library gate is passed.
+- **Downloads:** pinned, sha256-recorded, into `build/` only, never committed (relaxes the "no downloads" rule for this workstream).
+- Gates: G1 boolean engine, G2 GPU exact-sign filter, G3 SFCGAL parity (3D and 2D separately), G4 GPU value (stop at CPU-only if
+  the GPU is not at least 2x faster than the best multi-core CPU), G5 packaging (extension vs core vs separate service).
+
+Open (owners and legal, not decided here): whether a separately distributed extension changes the license analysis for each
+library, SSPL with Apache-2.0 and BSD-3, Geogram's bundled sub-licenses, whether CGAL/SFCGAL/OCCT code or reading it is acceptable,
+SBOM treatment of build-only tools.
+
 ## Risks and open questions
 
 - Results are not bit-identical to the CPU. Different nodes of a replicated or sharded cluster could
@@ -185,6 +221,12 @@ and #5. The tree has almost no SIMD today (`fts/unicode/byte_vector_*`).
   dependency and, if specialization runs at runtime, a compiler on the server host. Decide at Phase 1 design start,
   after checking Slang's CPU target against the Bazel build and how it emits `precise`/NoContraction (df64 needs it).
   See `poc/gpu/README.md` credits if adopted.
+
+- 3D mesh workstream risks: epsilon-based library booleans are deterministic only on a pinned build (output changes between
+  library versions, so any stored or replicated result needs an algorithm-version and FCV story); Manifold is C++ while the
+  Extensions API supports only Rust in production; the GPU may not pay off for many small meshes (launch and upload cost);
+  GPU filters must never decide inside an uncertainty band; parity with SFCGAL's 2D and skeleton functions mostly has no
+  permissive library behind it.
 
 Non-goals: GPU use in the matcher, transport, storage I/O, replication, FLE and Decimal128; ANN (an extension); CUDA,
 Metal or ROCm backends; multi-GPU; any behavior change when the flag is off.

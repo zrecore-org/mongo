@@ -1,0 +1,5 @@
+# Thingi10K raw archive pin. Values were read from the Hugging Face response headers on 2026-11-14 (x-repo-commit, x-linked-size, x-linked-etag = sha256 of the file);
+# the archive itself has not been downloaded yet. fetch_thingi.sh verifies the downloaded size and sha256 against these values.
+url=https://huggingface.co/datasets/Thingi10K/Thingi10K/resolve/2d5d3b2f3cd3711028ad75b12788c13b25559ec6/Thingi10K.tar.gz
+size=9616033688
+sha256=9d943391eed4e53cc9aec084ca57bf805731fb5b8ebf3b3ea814377771d2be71

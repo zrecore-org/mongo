@@ -95,7 +95,9 @@ jobs:
       # The repository is huge; the POCs need only their own directory.
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: poc/gpu
+          sparse-checkout: |
+            poc/gpu
+            src/third_party/boost
           fetch-depth: 1
 
       - name: Install packages
@@ -110,6 +112,11 @@ jobs:
           git clone --depth 1 --branch "$VULKAN_HEADERS_TAG" https://github.com/KhronosGroup/Vulkan-Headers "$RUNNER_TEMP/vkh"
           git clone --depth 1 --branch "$VOLK_TAG" https://github.com/zeux/volk "$RUNNER_TEMP/volk"
 
+      # 3D mesh workstream (poc/gpu/mesh/PLAN.md): pinned third-party file, checked against oracle/SHA256SUMS; the vendored Boost headers come from the sparse checkout.
+      - name: Mesh, fetch the pinned Shewchuk predicates
+        working-directory: poc/gpu
+        run: mesh/oracle/fetch.sh
+
       - name: Build
         working-directory: poc/gpu
         env:
@@ -118,6 +125,21 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DVKSDK="$RUNNER_TEMP/vkh" -DVOLK_DIR="$RUNNER_TEMP/volk"
           cmake --build build -j "$(nproc)"
           mkdir -p out
+
+      # Informational until seen passing on both architectures. CPU-only: no GPU involved.
+      - name: Mesh, MP02 predicate oracles and planted mutants
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        continue-on-error: true
+        run: build/mesh/predicates_check 2000000
+
+      - name: Mesh, MP01 corpus is byte-reproducible and matches the recorded hashes (x86_64 and aarch64 must agree)
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        continue-on-error: true
+        run: |
+          mesh/corpus/gen_corpus.sh --check
+          mesh/corpus/gen_corpus.sh --selftest
 
       - name: Select the lavapipe driver and show the device (informational)
         run: |

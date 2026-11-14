@@ -520,6 +520,33 @@ to the CPU on the same batches), at most 16 groups; the `_special` NaN tracker i
 **Reading.** For one group (and probably a few) the integer-binary64 kernel removes the main objection to GPU `$sum`: it is bit-identical to the CPU on well-conditioned data and costs nothing extra over df64 on the M1.
 It does not help the many-group case (on the T4 and the M1 it is slower than df64 and no faster than the CPU at 16 groups), and it needs `shaderInt64` (present on the M1, T4 and lavapipe, all verified bit-exact for the add; the fork notes that MoltenVK's feature flags over-report, so the startup probe is still required: the device probe here is that probe for the add).
 
+## 3D mesh workstream (plan: `mesh/PLAN.md`; summary: `.claude/planning/vulkan-gpu.md`)
+Library evaluation and GPU acceleration for SFCGAL-class 3D (then 2D) geometry. CPU-only so far. Exactness contract, tiers: (1) GPU on == CPU only, same build; (2) same binary and input give the same bytes at any thread count;
+(3) library boolean output identical across x86_64 and arm64 is measured, not required; (4) our predicates and measures are identical everywhere. "Wrong" means a silently incorrect result and must be 0.
+
+| Gate | Question | Status |
+|---|---|---|
+| G1 | Boolean engine (Manifold or Geogram) | not started (Wave 1) |
+| G2 | GPU exact-sign filter has zero wrong definite signs | not started (Wave 1) |
+| G3 | SFCGAL parity, 3D and 2D separately | Wave 0 in progress (MP06) |
+| G4 | GPU at least 2x faster than the best multi-core CPU | not started |
+| G5 | Packaging: extension vs core vs separate service | not started (MP14a) |
+
+### MP02: predicate oracles and planted mutants: PASS (CPU, Apple M1 Pro, `poc/gpu/build/mesh/predicates_check 10000000`)
+- Shewchuk's adaptive `orient3d` against an exact integer computation (Boost.Multiprecision, every double scaled to an integer): 0 disagreements in 9,999,996 cases; `orient2d`: 0 in 10,000,000.
+  Input classes: random, near-coplanar (an affine combination nudged by up to 3 ulp), exactly coplanar (integer coordinates, 1,666,666 exact zeros), large offset (2^40, a coarse grid), mixed exponents (2^-30 to 2^30), and degenerate (repeated points).
+- A floating-point filter for `orient3d` (Shewchuk's stage-A error bound, which is what a GPU filter would compute) returned 0 wrong definite signs; it answers "uncertain" 94.3% of the time on near-coplanar inputs, 75% on degenerate, 100% on exactly coplanar, 0.02% on mixed exponents and 0% on random.
+- Planted mutants of that filter are all caught: bound without the factor 7 (2,732 wrong definite signs, all in the near-coplanar class), no filter (148,559 + 52), `>=` instead of `>` (61,867 + 625,582), sign flipped (millions).
+- A generator bug was found and fixed while strengthening the near-coplanar class: the first version read one coordinate and wrote the nudge to another, so the class was weaker than intended. The "large offset" class turned out to be inherently easy (at 2^40 only coarse perturbations are representable), so it is labelled "coarse grid".
+- Not covered: `incircle`/`insphere` (no GPU use planned yet), inputs with subnormals or overflow in the products (the filter bound assumes none), and the GPU version of the filter (MP09).
+
+### MP01: corpus and harness: PASS (`mesh/corpus/`, `mesh/harness/`)
+- 31 adversarial cases plus primitives, a many-small set and an optional few-large set; byte-reproducible (two runs identical, 75 files), with expected volumes computed exactly. `corpus_check` verifies 20 cases' exact expectations by an independent route and 30 tag checks; its three planted corruptions are all caught.
+  It found one real defect in the generator (see `mesh/corpus/CORPUS.md`). Cross-platform hash equality (x86_64 and aarch64) is pending the CI step; Thingi10K is pinned but not fetched.
+
+### MP06: parity matrix and license audit: running
+Results will be added when `mesh/PARITY.md`, `mesh/parity.csv` and `mesh/LICENSES.md` are done.
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 4M for `$sum` and `$stdDev` with 16 groups on the M1), with the CPU path as automatic fallback (POC 4)

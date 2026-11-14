@@ -65,3 +65,8 @@ foreach(P ${POCS})
   target_link_libraries(${N} volk)
   add_dependencies(${N} shaders)
 endforeach()
+
+# 3D mesh workstream (poc/gpu/mesh); CPU-only targets, see mesh/PLAN.md
+if(EXISTS ${CMAKE_SOURCE_DIR}/mesh/CMakeLists.txt)
+  add_subdirectory(mesh)
+endif()

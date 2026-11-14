@@ -52,6 +52,9 @@ redistributing anything.
 | Mesa (lavapipe / llvmpipe) | CPU Vulkan driver used in CI as a second implementation | MIT | <https://gitlab.freedesktop.org/mesa/mesa>, <https://www.mesa3d.org> |
 | Slang (`slangc` 2026.20, Shader Slang / Khronos) | Compiles `slang/rsel.slang` to SPIR-V for the GLSL-vs-Slang comparison only; not part of the build. Installed by the pg-strom fork's workflow, used here as an unmodified tool. | Apache-2.0 with LLVM exceptions | <https://github.com/shader-slang/slang> |
 | Bazel and Bazelisk (Bazel authors / Google) | `bazel_slang/` standalone module for the Slang build-integration experiment only; not part of the CMake build | Apache-2.0 | <https://github.com/bazelbuild/bazel>, <https://github.com/bazelbuild/bazelisk> |
+| Shewchuk `predicates.c` (J. R. Shewchuk, CMU) | Robust `orient2d`/`orient3d`, the oracle for the 3D mesh predicate checks (`mesh/oracle/`); fetched into `build/`, never committed | Public domain (its header: "Placed in the public domain by Jonathan Richard Shewchuk") | <https://www.cs.cmu.edu/~quake/robust.html> |
+| Boost.Multiprecision (`cpp_int`) | Exact integer arithmetic for the mesh oracles and exact volumes (`mesh/harness/exact.h`), used from the copy vendored in `src/third_party/boost/libs/multiprecision` | BSL-1.0 | <https://github.com/boostorg/multiprecision> |
+| Thingi10K | Optional real-world mesh corpus for the mesh POCs; pinned download script only, nothing fetched yet, models never committed. Each model has its own license; the organizing code is Apache-2.0 | per model (10 licenses) | <https://github.com/Thingi10K/Thingi10K> |
 | NumPy | `verify_df64.py` | BSD-3-Clause | <https://numpy.org> |
 | CMake | Build system | BSD-3-Clause | <https://cmake.org> |
 | actions/checkout (GitHub) | CI | MIT | <https://github.com/actions/checkout> |
