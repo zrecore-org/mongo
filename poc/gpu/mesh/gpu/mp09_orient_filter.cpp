@@ -124,6 +124,11 @@ static int deviceMode(long N) {
     // the CPU speed of the same job for scale (single thread, hardware doubles, and the soft text on the CPU)
     double c0 = gpu::nowMs(); long sink = 0; for (uint32_t i = 0; i < n; i++) sink += filterRef(&all[12 * (size_t)i]); double c1 = gpu::nowMs();
     double s0 = gpu::nowMs(); for (uint32_t i = 0; i < n; i++) sink += filterSoft(&all[12 * (size_t)i]); double s1 = gpu::nowMs();
+    // multi-thread CPU baseline (hardware doubles, the same filter): the fair comparison for G4. n cases split into equal slices over T threads.
+    { unsigned T8 = std::max(1u, std::min(8u, std::thread::hardware_concurrency())); std::vector<long> part(T8, 0); double m0 = gpu::nowMs();
+      std::vector<std::thread> th; for (unsigned w = 0; w < T8; w++) th.emplace_back([&, w] { long sk = 0; uint32_t lo = (uint64_t)n * w / T8, hi = (uint64_t)n * (w + 1) / T8; for (uint32_t i = lo; i < hi; i++) sk += filterRef(&all[12 * (size_t)i]); part[w] = sk; });
+      for (auto& x : th) x.join(); double m1 = gpu::nowMs(); for (long v : part) sink += v;
+      printf("CPU hardware doubles, %u threads %.2f ms (%.1f M cases/s)\n", T8, m1 - m0, n / (m1 - m0) / 1000.0); }
     printf("throughput on %u cases: device total %.2f ms (%.1f M cases/s, upload and download included); CPU hardware doubles, 1 thread %.2f ms; CPU soft text, 1 thread %.2f ms (sink %ld)\n", n, t1 - t0, n / (t1 - t0) / 1000.0, c1 - c0, s1 - s0, sink);
     printf("summary: device vs reference disagreements %ld of %ld, wrong definite signs vs exact %ld\n", diffAll, total, wrongAll);
     rc = diffAll != 0 || wrongAll != 0;
