@@ -37,3 +37,21 @@ New generator, new seeds and placements; guard unchanged. 1137 rows (379 pairs):
 | two contact vertices | 24 | 12 | 0 / 6 |
 Silent wrong answers remain on 3 pairs (`held_nonconvex_vv_U_reflex_tet_m2`, `held_randvv_te5_bx3m_146`, `held_randvv_te5_oc3m_304`): the contact trigger fired but the post-check found no mismatch, so the miss is in the post-check's choice of test points. Two pairs are refused cleanly (`twovertex_tet_bridge_m0/_m1`). (The sub-agent's summary said "12 refused or failed rows"; the TSV has 9 + 6 = 15.)
 **Verdict: guard v1 fails the held-out test.** It removes most of the failure but leaves silent wrong results, which the product cannot accept. Unguarded failures are all vertex contact (the root cause is local to it). The non-convex "one contact" expectations are hand-derived (the generator checks only a separating plane); the failing cases were not independently re-verified.
+
+## MP18b: differential guard v2 on set 3 (sub-agent run, TSV counts re-checked by me; `results_set3_v1101.tsv`, frozen hashes in `FROZEN_GUARD2_SHA256.txt`, set 3 hashes in `corpus/touch/EXPECTED_SHA256_set3.txt`)
+Guard v2 and the set 3 generator were frozen and hashed before the run (`geogram_guard2.cpp` sha256 dbdce4e0...a212 matches the recorded value). Set 3: 534 pairs, 1602 rows (nested, non-convex, three-component, two-point, three-point, icosphere contact), Geogram v1.10.1 only; curved rows judged by the point tests.
+Totals: unguarded 1410 PASS / 192 FAIL; **guard v2 1260 PASS / 21 silent FAIL / 321 REFUSED.**
+| class | unguarded FAIL | v2 refused | v2 silent FAIL |
+|---|---|---|---|
+| nested vertex | 78 of 180 | 153 | 0 |
+| non-convex vertex-vertex | 21 of 270 | 54 | 0 |
+| random vertex-vertex | 24 of 300 | 42 | 0 |
+| three-component | 3 of 180 | 15 | 0 |
+| three-point contact | 24 of 90 | 36 | 0 |
+| sphere (reflect) | 3 of 246 | 3 | 0 |
+| two-point contact | 39 of 120 | 18 | **21** |
+| nested edge, nested face, sphere-box | 0 | 0 | 0 |
+Other bars: the 63 passing valid cases stay byte-identical (the three `box_vertex_touch` rows go FAIL to REFUSED); median added time on non-touching pairs +0.03%. Mutants: "accept on 2 of 3 agreeing" caught (171 silent FAIL); **"skip the permutation run" not caught** (same 21 silent FAIL, fewer refusals), so the third vertex order adds no correctness on this evidence.
+**Kill rule (registered in PLAN.md) applies on both counts:** (1) 21 silent FAIL rows = 7 two-point-contact pairs where all three vertex orders agree on the same wrong answer (24 triangles instead of 28; seen already in the held-out `tet_bridge` pairs), so order independence cannot detect that failure; (2) refuse rate on vertex-contact rows 321 of 1386 = 23.2%, above the 15% limit (the 153 nested-vertex refusals dominate).
+Caveats: set 3 uses the same trigger logic as v2 with new seeds and sizes; area is checked as an exact sum of squared doubled triangle areas (the true area is irrational), the sub-agent's reading of "exact"; `main` not run on set 3.
+**Conclusion: Geogram cannot be made safe by this kind of wrapper.** It fails silently in two-point contact, and refuses too often elsewhere. MP18 closes as a negative result; its usable output is the characterisation (vertex contact is the only failing contact class, root cause local to the symbolic-perturbation inside/outside ray test).
