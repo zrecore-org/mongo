@@ -1,0 +1,106 @@
+--- a/src/lib/geogram/mesh/mesh_surface_intersection.cpp
++++ b/src/lib/geogram/mesh/mesh_surface_intersection.cpp
+@@ -1940,6 +1940,94 @@
+                     }
+                 }
+                 return bits;
++            };
++
++            // MP22 patch. compute_component_inclusion_bits() decides a ray
++            // that passes exactly through a vertex or an edge of another
++            // component (or lies in the plane of one of its facets) with
++            // orient_3d_SOS(), and classify() runs in SOS_ADDRESS mode, so
++            // that decision depends on the memory order of the points (vertex
++            // numbering after mesh_colocate_vertices and the stack addresses
++            // of the two ray end points): odd hit counts on a closed body are
++            // possible and differ between platforms. Here the ray is tested
++            // with the exact orient_3d() only. If some facet is hit
++            // degenerately (a raw predicate is 0 and the ray is not excluded
++            // by the others) the ray direction is tilted by a few fixed small
++            // offsets until no facet is degenerate. Rays with no degenerate
++            // facet give exactly the result of the original code (SOS is not
++            // consulted by it in that case). If every direction is
++            // degenerate the original code is used.
++            auto inclusion_bits_checked = [&](
++                index_t component, index_t v
++            )->index_t {
++                if(!is_original_vertex(v)) {
++                    return compute_component_inclusion_bits(component, v);
++                }
++                Attribute<index_t> operand_bit_copy(
++                    mesh_copy_.facets.attributes(), "operand_bit"
++                );
++                Attribute<index_t> facet_component_copy(
++                    mesh_copy_.facets.attributes(), "component"
++                );
++                static const double tilt[][2] = {
++                    {0.0, 0.0}, {1.0, 2.0}, {-3.0, 5.0}, {7.0, -11.0},
++                    {13.0, 17.0}, {-19.0, 23.0}, {29.0, -31.0}, {37.0, 41.0}
++                };
++                const vec3 q1 = mesh_.vertices.point(v);
++                for(const auto& t: tilt) {
++                    const vec3 q2(q1.x + t[0], q1.y + t[1], q1.z + 1e6);
++                    const double xmin = std::min(q1.x, q2.x);
++                    const double xmax = std::max(q1.x, q2.x);
++                    const double ymin = std::min(q1.y, q2.y);
++                    const double ymax = std::max(q1.y, q2.y);
++                    index_t bits = 0;
++                    bool degenerate = false;
++                    for(index_t f: mesh_copy_.facets) {
++                        if(
++                            facet_component_copy[f] == NO_INDEX ||
++                            facet_component_copy[f] == component
++                        ) {
++                            continue;
++                        }
++                        const vec3& p1 = mesh_copy_.facets.point(f,0);
++                        const vec3& p2 = mesh_copy_.facets.point(f,1);
++                        const vec3& p3 = mesh_copy_.facets.point(f,2);
++                        // Closed bounding boxes disjoint: no contact at all.
++                        if(
++                            std::max(std::max(p1.x,p2.x),p3.x) < xmin ||
++                            std::min(std::min(p1.x,p2.x),p3.x) > xmax ||
++                            std::max(std::max(p1.y,p2.y),p3.y) < ymin ||
++                            std::min(std::min(p1.y,p2.y),p3.y) > ymax ||
++                            std::max(std::max(p1.z,p2.z),p3.z) < q1.z ||
++                            std::min(std::min(p1.z,p2.z),p3.z) > q2.z
++                        ) {
++                            continue;
++                        }
++                        Sign o1 = PCK::orient_3d(q1,p1,p2,p3);
++                        Sign o2 = PCK::orient_3d(q2,p1,p2,p3);
++                        if(o1 == o2 && o1 != ZERO) {
++                            continue; // strictly the same side of the plane
++                        }
++                        Sign s1 = PCK::orient_3d(q1,q2,p1,p2);
++                        Sign s2 = PCK::orient_3d(q1,q2,p2,p3);
++                        Sign s3 = PCK::orient_3d(q1,q2,p3,p1);
++                        if(s1*s2 < 0 || s2*s3 < 0 || s3*s1 < 0) {
++                            continue; // misses the triangle, whatever the zeros
++                        }
++                        if(
++                            o1 == ZERO || o2 == ZERO ||
++                            s1 == ZERO || s2 == ZERO || s3 == ZERO
++                        ) {
++                            degenerate = true;
++                            break;
++                        }
++                        bits ^= operand_bit_copy[f];
++                    }
++                    if(!degenerate) {
++                        return bits;
++                    }
++                }
++                return compute_component_inclusion_bits(component, v);
+             };
+ 
+             parallel_for(
+@@ -1952,7 +2040,7 @@
+                         return;
+                     }
+                     component_inclusion_bits[component] =
+-			compute_component_inclusion_bits(
++			inclusion_bits_checked(
+ 			    component, component_vertex[component]
+ 			);
+                 }
