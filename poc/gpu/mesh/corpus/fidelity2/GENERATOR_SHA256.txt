@@ -1,0 +1,5 @@
+RECORDED 2026-11-14T18:00:49Z after the pipeline freeze (lib/geogram/mp24b/FROZEN_SHA256.txt) and before any MP24b family was run through geogram_fidelity2; generator run twice: byte-identical (804 pairs)
+166eb6a4ead8861a4315b3e7f1fe82144804d194b11985e8db84ee83b073a66c  poc/gpu/mesh/corpus/fidelity2/gen_fidelity2.cpp
+fae52ace975093ded8e68b2a08c27129eac73761e2886df877f9f18c0c9068e7  poc/gpu/mesh/corpus/fidelity/gen_fidelity.cpp
+a52e241659ab9131c4ac5208e00e54cb75ae8817742d7e8c987ec22ca4d5047b  poc/gpu/mesh/corpus/fidelity2/build_gen_fidelity2.sh
+8c644fd86cc8b3cbfb35d913cfe12e26eafa1bd42b73d6992412037c3d5ed724  poc/gpu/mesh/corpus/fidelity2/EXPECTED_SHA256.txt

@@ -6,6 +6,7 @@
 # (CI sets WORK). Needs: curl, tar, patch, cmake, ninja or make, g++/c++, python3, and poc/gpu/build/third_party/shewchuk/predicates.c
 # (oracle/fetch.sh) plus the vendored Boost headers (src/third_party/boost).
 # MP24 stages (assembled fidelity pipeline, geogram_fidelity on G1, offset, thin, touch sets 3 and 5): build-fidelity | tools24 | corpus24 | score24 | report24 | mp24 (everything; build-chain first)
+# MP24b stages (pipeline v2 = exact scale + re-centre or c = 0 or hard-limit refusal; geogram_fidelity2): build-fidelity2 | tools24b | corpus24b | score24b | report24b | mp24b (everything)
 # Hard failures (exit 1): tarball sha256 differs from the pin, patch/patched-file hash differs from FROZEN_SHA256.txt, a restricted
 # component is compiled, a generated corpus file differs from its EXPECTED_SHA256 file. Verdicts themselves never fail the script.
 set -euo pipefail
@@ -320,6 +321,60 @@ stage_report24() {
   python3 -I "$HERE/mp24_report.py" "$WORK" "$(arch_tag)"
 }
 
+# ---------------------------------------------------------------- MP24b ----------------------------------------------------------------
+# geogram_fidelity2 = pipeline v2 (lib/geogram/mp24b): exact scale to max|x| < 2^18, exact re-centring or c = 0 (|centre| <= T x side, T = 2^12 from the development sweep) or a hard-limit refusal.
+# Frozen sources: mp24b/FROZEN_SHA256.txt (checked before the build). Fresh acceptance families: corpus/fidelity2 (gen_fidelity2.cpp, EXPECTED_SHA256.txt, GENERATOR_SHA256.txt).
+# The MP24 families (G1, offset, thin, set 3, set 5) are re-run through v2. Scored with lib/geogram/mp24b/score_fidelity2.py, GEOGRAM_RUNNER_THREADS=1. Each family is scored once.
+FROZEN24B="$MESH/lib/geogram/mp24b/FROZEN_SHA256.txt"
+FID2_DIR="$MESH/corpus/fidelity2"
+FID2="${FID2_BIN:-$WORK/geo_chain/bin/geogram_fidelity2}"      # FID2_BIN: a planted mutant (lib/geogram/mp24b/run_mutants.sh)
+SCORE24B_DIR="${SCORE24B_DIR:-$WORK/score24b}"
+FAMS24B="${FAMS24B:-g1:g1_corpus off:fid_corpus/offset thin:fid_corpus/thin set3:set3_corpus set5:set5_corpus f2:fid2_corpus}"
+stage_build_fidelity2() {
+  say "build geogram_fidelity2 (sources checked against mp24b/FROZEN_SHA256.txt)"
+  [ -f "$WORK/geo_chain/build/lib/libgeogram.a" ] || die "no $WORK/geo_chain (build-chain stage not run)"
+  ( cd "$ROOT" && grep -v '^FROZEN' "$FROZEN24B" > "$WORK/frozen24b.sums" && shacheck "$WORK/frozen24b.sums" ) || die "a geogram_fidelity2 source or a frozen input differs from mp24b/FROZEN_SHA256.txt"
+  GEOGRAM_DIR="$WORK/geo_chain" OUTDIR="$WORK/geo_chain/bin" MUTANTS="${MUTANTS:-0}" sh "$MESH/lib/geogram/mp24b/build.sh"
+  echo "geogram_fidelity2 sha256 $(sha "$FID2")"
+}
+stage_tools24b() {
+  say "build oracle tools, the MP24 generators and gen_fidelity2"
+  stage_tools24
+  local B="$ROOT/src/third_party/boost"; local INC=(); for d in "$B"/libs/*/include; do INC+=("-I$d"); done
+  ${CXX:-c++} -std=c++17 -O2 -ffp-contract=off -I"$B" "${INC[@]}" "$FID2_DIR/gen_fidelity2.cpp" -o "$WORK/bin/gen_fidelity2"
+}
+stage_corpus24b() {
+  say "generate G1, set 3, set 5, the MP24 families and the MP24b families; verify generator sources and every file against the hashes recorded before the runs"
+  [ -x "$WORK/bin/gen_fidelity2" ] || stage_tools24b
+  stage_corpus24
+  local f want
+  for f in gen_fidelity2.cpp build_gen_fidelity2.sh EXPECTED_SHA256.txt; do
+    want="$(awk -v f="/$f" 'index($2, f) {print $1}' "$FID2_DIR/GENERATOR_SHA256.txt" | head -1)"; [ -n "$want" ] || die "no hash for $f in corpus/fidelity2/GENERATOR_SHA256.txt"
+    [ "$(sha "$FID2_DIR/$f")" = "$want" ] || die "$f differs from the hash recorded before the run"
+  done
+  want="$(awk '/corpus\/fidelity\/gen_fidelity.cpp/{print $1}' "$FID2_DIR/GENERATOR_SHA256.txt")"; [ "$(sha "$MESH/corpus/fidelity/gen_fidelity.cpp")" = "$want" ] || die "gen_fidelity.cpp (included by gen_fidelity2) differs from the recorded hash"
+  rm -rf "${WORK:?}/fid2_corpus"; "$WORK/bin/gen_fidelity2" "$WORK/fid2_corpus" > "$WORK/fid2_corpus.gen.log" 2>&1 || die "gen_fidelity2 failed"; cat "$WORK/fid2_corpus.gen.log"
+  if ( cd "$WORK/fid2_corpus" && shacheck "$FID2_DIR/EXPECTED_SHA256.txt" > "$WORK/fid2_corpus.verify.log" 2>&1 ) && [ "$(find "$WORK/fid2_corpus" -type f | wc -l | tr -d ' ')" = "$(wc -l < "$FID2_DIR/EXPECTED_SHA256.txt" | tr -d ' ')" ]; then
+    echo "fid2_corpus: all $(wc -l < "$FID2_DIR/EXPECTED_SHA256.txt") files match corpus/fidelity2/EXPECTED_SHA256.txt"
+  else grep -v ': OK$' "$WORK/fid2_corpus.verify.log" | head; die "MP24b families differ from corpus/fidelity2/EXPECTED_SHA256.txt on this platform (different generator output); results would not be comparable. Stopping."; fi
+}
+stage_score24b() {
+  [ -x "$FID2" ] || die "missing $FID2 (build-fidelity2 stage not run)"
+  [ -d "$WORK/fid2_corpus" ] || stage_corpus24b
+  export SCORER="$MESH/lib/geogram/mp24b/score_fidelity2.py"
+  rm -rf "${SCORE24B_DIR:?}"; mkdir -p "$SCORE24B_DIR"
+  export SCORE_DIR="$SCORE24B_DIR"
+  local pair n c
+  for pair in $FAMS24B; do
+    n="${pair%%:*}"; c="$WORK/${pair#*:}"; say "score geogram_fidelity2: $n"
+    shard_score "$n" "$FID2" "$c"
+  done
+}
+stage_report24b() {
+  say "report (MP24b)"
+  python3 -I "$HERE/mp24b_report.py" "$WORK" "$(arch_tag)"
+}
+
 case "${1:-all}" in
   fetch) stage_fetch ;;
   build-unpatched) build_geogram unpatched ;;
@@ -337,6 +392,12 @@ case "${1:-all}" in
   corpus24) stage_corpus24 ;;
   score24) stage_score24 ;;
   report24) stage_report24 ;;
+  build-fidelity2) stage_build_fidelity2 ;;
+  tools24b) stage_tools24b ;;
+  corpus24b) stage_corpus24b ;;
+  score24b) stage_score24b ;;
+  report24b) stage_report24b ;;
+  mp24b) stage_fetch; stage_build_chain; stage_build_fidelity2; stage_tools24b; stage_corpus24b; stage_score24b; stage_report24b ;;
   mp24) stage_fetch; stage_build_chain; stage_build_fidelity; stage_tools24; stage_corpus24; stage_score24; stage_report24 ;;
   mp22b) stage_fetch; stage_build_chain; stage_tools; stage_corpus5; stage_score5; stage_report5 ;;
   all) stage_fetch; build_geogram unpatched; build_geogram patched; stage_tools; stage_corpus; stage_score; stage_report ;;

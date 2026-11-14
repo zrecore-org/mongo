@@ -1,0 +1,23 @@
+mutant NOSCALE: changed rows g1 0, off 0, thin 0, set3 0, set5 0, f2 402; FAIL rows g1 0, off 0, thin 0, set3 0, set5 0, f2 402; CAUGHT by f2; f2 classes changed: {'nest': 375, 'thin': 15, 'touch': 6, 'uflow': 6}
+   e.g. f2:f2_nest_k19_bottom.difference ('PASS', 'exact') -> ('FAIL', 'close')
+   e.g. f2:f2_nest_k19_bottom.intersection ('PASS', 'exact') -> ('FAIL', 'wrong')
+mutant SCALE19: changed rows g1 0, off 0, thin 0, set3 0, set5 0, f2 66; FAIL rows g1 0, off 0, thin 0, set3 0, set5 0, f2 69; CAUGHT by f2; f2 classes changed: {'nest': 66}
+   e.g. f2:f2_nest_k19_bottom.difference ('PASS', 'exact') -> ('FAIL', 'close')
+   e.g. f2:f2_nest_k19_bottom.intersection ('PASS', 'exact') -> ('FAIL', 'wrong')
+mutant C0: changed rows g1 6, off 767, thin 0, set3 0, set5 1, f2 441; FAIL rows g1 6, off 741, thin 0, set3 0, set5 0, f2 273; CAUGHT by g1/off/set5/f2; f2 classes changed: {'cfar': 222, 'cfarrc': 31, 'off': 188}
+   e.g. g1:box_huge_offset_one_ulp.difference ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. g1:box_huge_offset_one_ulp.intersection ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. off:off_coplanar_chain_mixA_E1.difference ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. off:off_coplanar_chain_mixA_E1.intersection ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. set5:s5_sliverany_012.union ('PASS', 'close') -> ('PASS', 'exact')
+   e.g. f2:f2_cfar_L1_x1_j13_shift.difference ('REFUSED', '-') -> ('PASS', 'n')
+mutant NOBACK: changed rows g1 6, off 1314, thin 0, set3 0, set5 0, f2 1037; FAIL rows g1 6, off 1314, thin 0, set3 0, set5 0, f2 1040; CAUGHT by g1/off/f2; f2 classes changed: {'cfarrc': 57, 'nest': 411, 'off': 379, 'thin': 112, 'touch': 78}
+   e.g. g1:box_huge_offset_one_ulp.difference ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. g1:box_huge_offset_one_ulp.intersection ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. off:off_b53_corner_overlap_0.difference ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. off:off_b53_corner_overlap_0.intersection ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. f2:f2_cfarrc_L2_j17_ident.intersection ('PASS', 'exact') -> ('FAIL', 'wrong')
+   e.g. f2:f2_cfarrc_L2_j17_ident.union ('PASS', 'exact') -> ('FAIL', 'wrong')
+mutant TLARGE: changed rows g1 0, off 0, thin 0, set3 0, set5 0, f2 222; FAIL rows g1 0, off 0, thin 0, set3 0, set5 0, f2 56; CAUGHT by f2; f2 classes changed: {'cfar': 222}
+   e.g. f2:f2_cfar_L1_x1_j13_shift.difference ('REFUSED', '-') -> ('PASS', 'n')
+   e.g. f2:f2_cfar_L1_x1_j13_shift.intersection ('REFUSED', '-') -> ('PASS', 'n')
