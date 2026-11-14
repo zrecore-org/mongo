@@ -112,6 +112,7 @@ Fixed on 2026-11-14, **before any library output was scored**. Scoring tool: `me
 3. **Width census first (before the integer class is written):** run every previously failing valid case through `toCommonInts` (`harness/exact.h`) after the same exact re-centring as before and record the integer width L each needs. Then the rule, fixed now: cases with L at or below the chosen width are scored against the **original, unsnapped** input with `mesh_compare` and must show 0 FAIL; cases above it are reported as OUT-OF-RANGE or refused. **Nothing is snapped and then scored.** Cases counted by distinct name: the union of Manifold's 15 and Geogram's 9 valid-input failures (they share the 6 offset cases), so the census lists each name once with which library failed it.
 4. Speed vs Manifold and Geogram on the same cases (honest: single thread, include the quantization step).
 **Kill criteria (numbers fixed now):** if the unfiltered 512-bit integer plane-plane-plane sign costs more than 50x the time of Shewchuk's adaptive `orient3d` on the same random inputs (M1, single thread, one-time measurement), or step 3 needs more than the plane-based core plus a simple arrangement to pass, stop and record why.
+**Census result (2026-11-14, `RESULTS.md`):** the 7 distinct failing names need L <= 53, so the registered width is **512-bit**; curved cases (L = 57-59) are OUT-OF-RANGE at 512.
 **Out of scope:** GPU kernels (step 1 only counts limb ops), octree acceleration, non-manifold repair, production API.
 
 ## Resource rules
