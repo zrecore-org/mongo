@@ -75,7 +75,7 @@ static int score(const std::string& dir, const std::string& id, int op, const st
     }
     // structure of the result
     bool empty = R.nt() == 0;
-    if (validInputs && !empty && !tr.closedManifold()) fails.push_back("result is not a closed manifold");
+    if (!empty && !tr.closedManifoldAsReturned()) fails.push_back("result is not a closed manifold (as returned, by vertex index)");     // pre-registered bar, amended 2026-11-14: judged as returned, see PLAN.md
     if (validInputs && !empty && tr.inverted) fails.push_back("result has negative volume (inverted)");
     if (validInputs && !empty && tr.duplicateTri) fails.push_back("result has a duplicated triangle");
     // point classification
@@ -112,8 +112,8 @@ static int score(const std::string& dir, const std::string& id, int op, const st
     }
     bool pass = fails.empty();
     if (!quiet) {
-        printf("%s %s: %s | inputs=%s | result tri=%zu closed=%d euler=%ld components=%d zeroArea=%d | volume=%s", id.c_str(), kOpName[op], pass ? (validInputs ? "PASS" : "ACCEPTED-UNVERIFIED") : "FAIL",
-               validInputs ? "valid" : "invalid", R.nt(), (int)tr.closedManifold(), tr.euler(), tr.components, (int)tr.zeroArea, volStatus.c_str());
+        printf("%s %s: %s | inputs=%s | result tri=%zu closed=%d geomClosed=%d euler=%ld components=%d zeroArea=%d | volume=%s", id.c_str(), kOpName[op], pass ? (validInputs ? "PASS" : "ACCEPTED-UNVERIFIED") : "FAIL",
+               validInputs ? "valid" : "invalid", R.nt(), (int)tr.closedManifoldAsReturned(), (int)tr.closedManifold(), tr.euler(), tr.components, (int)tr.zeroArea, volStatus.c_str());
         if (volStatus == "close") printf("(rel %.3g)", rel);
         printf(" | cells %d bad %d skipped %d | samples %d bad %d skipped %d", s.cells, s.cellBad, s.cellSkipped, s.pts, s.ptsBad, s.ptsSkipped);
         for (auto& f : fails) printf(" | %s", f.c_str());

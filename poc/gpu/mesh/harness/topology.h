@@ -7,7 +7,9 @@
 
 namespace mesh {
 struct Topology {
-    bool anyOpen = false;        // some edge belongs to exactly one triangle
+    bool anyOpenIdx = false;     // as returned (by vertex index, no welding): some edge belongs to exactly one triangle
+    bool nonManifoldIdx = false; // as returned (by index): some edge belongs to more than two triangles, or two with the same direction
+    bool anyOpen = false;        // after welding vertices with exactly equal coordinates: some edge belongs to exactly one triangle
     bool nonManifold = false;    // some edge belongs to more than two triangles, or two triangles with the same direction
     bool duplicateTri = false;   // the same three vertex indices appear twice
     bool zeroArea = false;       // some triangle has exactly zero area (exact test)
@@ -18,7 +20,8 @@ struct Topology {
     size_t faces = 0;
     int components = 0;          // edge-connected components of triangles (after welding)
     long euler() const { return (long)vertices - (long)edges + (long)faces; }
-    bool closedManifold() const { return !anyOpen && !nonManifold && faces > 0; }
+    bool closedManifold() const { return !anyOpen && !nonManifold && faces > 0; }            // geometric: coincident vertices are identified
+    bool closedManifoldAsReturned() const { return !anyOpenIdx && !nonManifoldIdx && faces > 0; }   // combinatorial: exactly the indices the library returned
 };
 
 inline Topology analyzeTopology(const Mesh& m) {
@@ -50,6 +53,14 @@ inline Topology analyzeTopology(const Mesh& m) {
         BigInt v[9]; toCommonInts({pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2]}, v);
         BigInt ux = v[3]-v[0], uy = v[4]-v[1], uz = v[5]-v[2], wx = v[6]-v[0], wy = v[7]-v[1], wz = v[8]-v[2];
         if ((uy*wz-uz*wy) == 0 && (uz*wx-ux*wz) == 0 && (ux*wy-uy*wx) == 0) t.zeroArea = true;
+    }
+    {   // the same test on the mesh exactly as returned: no welding by coordinates
+        std::map<std::pair<uint32_t, uint32_t>, std::pair<int, int>> ie;
+        for (size_t k = 0; k < m.nt(); k++) for (int e = 0; e < 3; e++) {
+            uint32_t p = m.t[3*k+e], q = m.t[3*k+(e+1)%3]; auto key = std::make_pair(std::min(p, q), std::max(p, q));
+            auto& v = ie[key]; if (p < q) v.first++; else v.second++;
+        }
+        for (auto& e : ie) { int n = e.second.first + e.second.second; if (n == 1) t.anyOpenIdx = true; if (n > 2 || (n == 2 && e.second.first != 1)) t.nonManifoldIdx = true; }
     }
     t.edges = edges.size();
     for (auto& e : edges) {
