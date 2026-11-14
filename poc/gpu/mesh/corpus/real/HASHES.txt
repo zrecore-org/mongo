@@ -1,0 +1,23 @@
+FROZEN 2026-11-14T19:08:56Z before any tool was run on any pair
+191e0f8c1b423f0d243a8aee5e4d7bae43b710c1b42ec715adc69aa31a8154cf  /Volumes/CrucialX9/Projects/mongo/storage/thingi10k_raw/metadata/input_summary.csv
+b12c8d2289125a0d3af3f344a4c5dcfa2114d67a951312505e94210d1cfdbc2f  /Volumes/CrucialX9/Projects/mongo/storage/thingi10k_raw/metadata/geometry_data.csv
+3b9d3aebb20b6cf7588bd7d3dfa8b327b96f7ed85f8946cdf9e3b3dfd58e02cc  corpus/real/eligible_ids.txt
+0bdf7819603272c827d01bc3116e1acf5a36888a1950176cf2ae1849cf92ed69  corpus/real/selected_models.tsv
+6a62650f6dc71307461feb5254c258b2bc98615b2b7770a29178a2ecfe7bbb59  corpus/real/model_conversion.tsv
+9b86bd051f22982a39f17c614d7344eae455a99a839ffb4f6526af00acddbd41  corpus/real/pairs.tsv
+d6ab0087d291962e7d2e432980636083f39062a8fff74a823c2fd5396086fbef  lib/realmesh/select_models.py
+d8b382e9fcf06873aece4f9c7e38cc9eb59ecde0e576f24b2f13f54c012b4adb  lib/realmesh/build_pairs.py
+1b9da95e8cbebc308f84b1eb733361cc76788273a43428a2948d127cc312ed13  lib/realmesh/pair_build.cpp
+62bff896d0ac84d9acb6a6f99308b3f455eb258a6a61d59309c5322ffdebd8dd  lib/realmesh/stl_to_msh.cpp
+03c432e9d761d713a1910abaca3a6d6ed2b5a38ee50c0bb78c9ab8470d523264  lib/realmesh/real_score.cpp
+4dede3a338c27167064f9dbaad32cd559fd136d70aef752bbe0fb8b693abd673  lib/realmesh/run_pairs.py
+# every pair file (A and B, in pairs.tsv columns 8 and 9) and model msh hashes are in pairs.tsv and model_conversion.tsv
+# source archive: sha256 verified against corpus/THINGI.pin by fetch_thingi.sh (9d943391eed4e53cc9aec084ca57bf805731fb5b8ebf3b3ea814377771d2be71)
+
+AMENDED 2026-11-14T19:10:32Z before the full run (after a 2-pair smoke test, p000 and p001, that showed nested same-orientation shells = winding number 2 make the parity classification ambiguous): real_score.cpp now computes the exact winding number, drops samples where A or B has winding outside {0,1} (counted as ambiguous), and requires result winding 0/1. Pairs, selection and runners unchanged.
+20ba7a410b73b15229af6ee699e7831270ea0a1062b5e110855be37f5af756a1  lib/realmesh/real_score.cpp
+4dede3a338c27167064f9dbaad32cd559fd136d70aef752bbe0fb8b693abd673  lib/realmesh/run_pairs.py
+0e2d5fae180bd994def98d5cfd4137584815d6077cfcd1e1736d0c821952c31e  /Volumes/CrucialX9/Projects/mongo/storage/mesh/mp24b/bin/geogram_fidelity2
+bc411ad7e17a9fcf5094f97e1703ff79a1bceec87a02f09975d82c493e83c781  /Volumes/CrucialX9/Projects/mongo/storage/mesh/mp24b/work/geo_chain/bin/geogram_runner
+ad1d305b117594feb86f70201e0dc35193c06e120b7705a09b644a26f4451744  /Volumes/CrucialX9/Projects/mongo/storage/mesh/manifold/runA/manifold_runner
+63479ffa66747bd6260bae2c97f8af41619ad0040eb047432122e95dcad22bce  /Volumes/CrucialX9/Projects/mongo/storage/mesh/mp26/bin/real_score

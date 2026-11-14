@@ -1,0 +1,123 @@
+pairs 420 with ambiguous operands (winding outside {0,1} at some sample): 13
+
+== ALL PAIRS
+v2  union         n=420 correct=410 wrong=  0 refused= 10 crash=0 timeout=0 | time s median=0.263 p99=4.44 max=10.18 | peak RSS MiB median=11 max=213
+v2  intersection  n=420 correct=410 wrong=  0 refused= 10 crash=0 timeout=0 | time s median=0.228 p99=3.79 max=8.73 | peak RSS MiB median=10 max=252
+v2  difference    n=420 correct=410 wrong=  0 refused= 10 crash=0 timeout=0 | time s median=0.241 p99=4.31 max=9.45 | peak RSS MiB median=11 max=250
+geo union         n=420 correct=420 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.275 p99=4.39 max=10.24 | peak RSS MiB median=10 max=232
+geo intersection  n=420 correct=420 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.229 p99=3.86 max=8.78 | peak RSS MiB median=10 max=218
+geo difference    n=420 correct=420 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.250 p99=4.28 max=9.51 | peak RSS MiB median=10 max=225
+man union         n=420 correct=408 wrong= 12 refused=  0 crash=0 timeout=0 | time s median=0.035 p99=0.36 max=0.55 | peak RSS MiB median=8 max=253
+man intersection  n=420 correct=415 wrong=  5 refused=  0 crash=0 timeout=0 | time s median=0.033 p99=0.29 max=0.39 | peak RSS MiB median=6 max=137
+man difference    n=420 correct=408 wrong= 12 refused=  0 crash=0 timeout=0 | time s median=0.033 p99=0.33 max=0.45 | peak RSS MiB median=7 max=174
+
+== PAIRS WITHOUT AMBIGUOUS OPERANDS
+v2  union         n=407 correct=405 wrong=  0 refused=  2 crash=0 timeout=0 | time s median=0.269 p99=4.44 max=10.18 | peak RSS MiB median=11 max=213
+v2  intersection  n=407 correct=405 wrong=  0 refused=  2 crash=0 timeout=0 | time s median=0.230 p99=3.79 max=8.73 | peak RSS MiB median=11 max=252
+v2  difference    n=407 correct=405 wrong=  0 refused=  2 crash=0 timeout=0 | time s median=0.250 p99=4.31 max=9.45 | peak RSS MiB median=11 max=250
+geo union         n=407 correct=407 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.276 p99=4.39 max=10.24 | peak RSS MiB median=10 max=232
+geo intersection  n=407 correct=407 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.229 p99=3.86 max=8.78 | peak RSS MiB median=10 max=218
+geo difference    n=407 correct=407 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.251 p99=4.28 max=9.51 | peak RSS MiB median=10 max=225
+man union         n=407 correct=407 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.034 p99=0.36 max=0.55 | peak RSS MiB median=8 max=253
+man intersection  n=407 correct=407 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.033 p99=0.29 max=0.39 | peak RSS MiB median=6 max=137
+man difference    n=407 correct=407 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.033 p99=0.33 max=0.45 | peak RSS MiB median=7 max=174
+
+== PAIRS WITH AMBIGUOUS OPERANDS
+v2  union         n= 13 correct=  5 wrong=  0 refused=  8 crash=0 timeout=0 | time s median=0.050 p99=2.02 max=2.02 | peak RSS MiB median=6 max=72
+v2  intersection  n= 13 correct=  5 wrong=  0 refused=  8 crash=0 timeout=0 | time s median=0.043 p99=1.63 max=1.63 | peak RSS MiB median=6 max=73
+v2  difference    n= 13 correct=  5 wrong=  0 refused=  8 crash=0 timeout=0 | time s median=0.054 p99=1.78 max=1.78 | peak RSS MiB median=6 max=78
+geo union         n= 13 correct= 13 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.135 p99=3.82 max=3.82 | peak RSS MiB median=8 max=75
+geo intersection  n= 13 correct= 13 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.197 p99=3.15 max=3.15 | peak RSS MiB median=7 max=98
+geo difference    n= 13 correct= 13 wrong=  0 refused=  0 crash=0 timeout=0 | time s median=0.125 p99=3.24 max=3.24 | peak RSS MiB median=7 max=101
+man union         n= 13 correct=  1 wrong= 12 refused=  0 crash=0 timeout=0 | time s median=0.040 p99=0.30 max=0.30 | peak RSS MiB median=6 max=128
+man intersection  n= 13 correct=  8 wrong=  5 refused=  0 crash=0 timeout=0 | time s median=0.034 p99=0.21 max=0.21 | peak RSS MiB median=5 max=59
+man difference    n= 13 correct=  1 wrong= 12 refused=  0 crash=0 timeout=0 | time s median=0.038 p99=0.23 max=0.23 | peak RSS MiB median=5 max=96
+
+== failures (pair kind idA idB tool op reasons)
+p001 perm 54228 54228 man difference duplicate-triangle amb=6199 nt=356
+p001 perm 54228 54228 man intersection duplicate-triangle amb=6199 nt=282
+p001 perm 54228 54228 man union pts(70) amb=6199 nt=404
+p073 perm 95420 95420 man difference inverted,duplicate-triangle amb=16123 nt=1494
+p073 perm 95420 95420 man union inverted,duplicate-triangle amb=16123 nt=2140
+p138 perm 76541 76541 man difference inverted,duplicate-triangle amb=4299 nt=79300
+p138 perm 76541 76541 man union inverted,duplicate-triangle amb=4299 nt=135642
+p152 rot 44042 44042 man difference duplicate-triangle amb=1320 nt=850
+p152 rot 44042 44042 man intersection pts(17),inverted amb=1320 nt=638
+p152 rot 44042 44042 man union duplicate-triangle amb=1320 nt=1150
+p176 rot 66773 66773 man difference inverted amb=314 nt=13036
+p176 rot 66773 66773 man union inverted amb=314 nt=26072
+p209 rot 76540 76540 man difference inverted,duplicate-triangle amb=4181 nt=86972
+p209 rot 76540 76540 man union inverted,duplicate-triangle amb=4181 nt=152056
+p224 rot 57896 57896 man difference inverted amb=2197 nt=170
+p224 rot 57896 57896 man union inverted amb=2197 nt=218
+p235 rot 53755 53755 man difference pts(109),duplicate-triangle amb=1371 nt=59780
+p235 rot 53755 53755 man intersection duplicate-triangle amb=1371 nt=48444
+p235 rot 53755 53755 man union pts(288) amb=1371 nt=67812
+p261 rot 42840 42840 man difference pts(6),inverted amb=805 nt=872
+p261 rot 42840 42840 man union inverted amb=805 nt=1192
+p279 rot 95413 95413 man difference pts(22),inverted,duplicate-triangle amb=6224 nt=1848
+p279 rot 95413 95413 man union inverted,duplicate-triangle amb=6224 nt=2446
+p301 diff 116875 95410 man difference duplicate-triangle amb=7813 nt=14744
+p301 diff 116875 95410 man intersection inverted amb=7813 nt=6110
+p301 diff 116875 95410 man union inverted,duplicate-triangle amb=7813 nt=15666
+p302 diff 200076 73236 man difference duplicate-triangle amb=303 nt=46510
+p302 diff 200076 73236 man union duplicate-triangle amb=303 nt=47216
+p304 diff 96077 45413 man intersection duplicate-triangle amb=536 nt=1496
+
+== refusals
+p023 perm 153100 153100 v2 union 3 REFUSED: invalid input A: zero-area triangle (exact test)
+p023 perm 153100 153100 v2 intersection 3 REFUSED: invalid input A: zero-area triangle (exact test)
+p023 perm 153100 153100 v2 difference 3 REFUSED: invalid input A: zero-area triangle (exact test)
+p073 perm 95420 95420 v2 union 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p073 perm 95420 95420 v2 intersection 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p073 perm 95420 95420 v2 difference 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p138 perm 76541 76541 v2 union 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p138 perm 76541 76541 v2 intersection 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p138 perm 76541 76541 v2 difference 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p176 rot 66773 66773 v2 union 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p176 rot 66773 66773 v2 intersection 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p176 rot 66773 66773 v2 difference 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p224 rot 57896 57896 v2 union 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p224 rot 57896 57896 v2 intersection 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p224 rot 57896 57896 v2 difference 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p209 rot 76540 76540 v2 union 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p209 rot 76540 76540 v2 intersection 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p209 rot 76540 76540 v2 difference 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p261 rot 42840 42840 v2 union 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p261 rot 42840 42840 v2 intersection 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p261 rot 42840 42840 v2 difference 3 REFUSED: invalid input A: inverted orientation (exact volume not positive)
+p279 rot 95413 95413 v2 union 3 REFUSED: invalid input A: zero-area triangle (exact test)
+p279 rot 95413 95413 v2 intersection 3 REFUSED: invalid input A: zero-area triangle (exact test)
+p279 rot 95413 95413 v2 difference 3 REFUSED: invalid input A: zero-area triangle (exact test)
+p301 diff 116875 95410 v2 union 3 REFUSED: invalid input B: inverted orientation (exact volume not positive)
+p301 diff 116875 95410 v2 intersection 3 REFUSED: invalid input B: inverted orientation (exact volume not positive)
+p301 diff 116875 95410 v2 difference 3 REFUSED: invalid input B: inverted orientation (exact volume not positive)
+p407 diff 60273 67817 v2 union 3 REFUSED: invalid input B: non-manifold edge (after welding equal vertices, 12 edges shared by more than two triangles or with equal directio
+p407 diff 60273 67817 v2 intersection 3 REFUSED: invalid input B: non-manifold edge (after welding equal vertices, 12 edges shared by more than two triangles or with equal directio
+p407 diff 60273 67817 v2 difference 3 REFUSED: invalid input B: non-manifold edge (after welding equal vertices, 12 edges shared by more than two triangles or with equal directio
+
+== residual |V(AuB)+V(AnB)-V(A)-V(B)|/V(AuB): quantiles per tool (pairs without ambiguous operands, both ops produced)
+v2 405 median 4.18e-18 p90 3.84e-17 p99 1.75e-16 max 4.51e-15  > 1e-12: 0  > 1e-6: 0
+geo 407 median 6.23e-18 p90 5.05e-17 p99 2.76e-16 max 4.51e-15  > 1e-12: 0  > 1e-6: 0
+man 407 median 1.43e-18 p90 3.79e-17 p99 1.87e-15 max 1.91e-14  > 1e-12: 0  > 1e-6: 0
+largest residuals:
+  p001 geo 5.5 amb=6199 perm 54228 54228
+  p001 v2 5.5 amb=6199 perm 54228 54228
+  p073 geo 2.31 amb=16123 perm 95420 95420
+  p279 geo 2.28 amb=6224 rot 95413 95413
+  p209 geo 2.14 amb=4181 rot 76540 76540
+  p138 geo 2.12 amb=4299 perm 76541 76541
+  p224 geo 2.07 amb=2197 rot 57896 57896
+  p261 geo 2.05 amb=805 rot 42840 42840
+  p176 geo 2 amb=314 rot 66773 66773
+  p301 geo 1.88 amb=7813 diff 116875 95410
+  p152 geo 1.09 amb=1320 rot 44042 44042
+  p152 v2 1.09 amb=1320 rot 44042 44042
+  p235 geo 0.846 amb=1371 rot 53755 53755
+  p235 v2 0.846 amb=1371 rot 53755 53755
+  p304 geo 0.589 amb=536 diff 96077 45413
+
+PASS results with a non-manifold edge (geometric only): Counter({'geo': 7, 'man': 5, 'v2': 1})
+zero-area triangles in PASS results: Counter({'man': 4, 'geo': 3})
+PASS results with zero informative (inside-expected) samples: Counter({'geo': 48, 'man': 33, 'v2': 26})
+samples per result min: 3877
