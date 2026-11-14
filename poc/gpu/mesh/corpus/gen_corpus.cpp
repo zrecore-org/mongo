@@ -212,7 +212,11 @@ int main(int argc, char** argv) {
             int kind = 1 + (int)(next() % 3);                                          // 80 to 1280 triangles
             double sc = std::ldexp(1.0, (int)(next() % 3) - 1);
             Mesh m = base[kind]; for (double& x : m.v) x *= sc;
-            m = translated(m, (double)(int)(next() % 64), (double)(int)(next() % 64), (double)(int)(next() % 64));
+            // sequenced on purpose: the order in which function arguments are evaluated is unspecified in C++ (clang goes left to right, GCC on x86_64 does not)
+            double tx = (double)(int)(next() % 64);
+            double ty = (double)(int)(next() % 64);
+            double tz = (double)(int)(next() % 64);
+            m = translated(m, tx, ty, tz);
             writeRecord(f, m);
         }
         fclose(f);

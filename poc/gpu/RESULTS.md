@@ -542,7 +542,11 @@ Library evaluation and GPU acceleration for SFCGAL-class 3D (then 2D) geometry. 
 
 ### MP01: corpus and harness: PASS (`mesh/corpus/`, `mesh/harness/`)
 - 31 adversarial cases plus primitives, a many-small set and an optional few-large set; byte-reproducible (two runs identical, 75 files), with expected volumes computed exactly. `corpus_check` verifies 20 cases' exact expectations by an independent route and 30 tag checks; its three planted corruptions are all caught.
-  It found one real defect in the generator (see `mesh/corpus/CORPUS.md`). Cross-platform hash equality (x86_64 and aarch64) is pending the CI step; Thingi10K is pinned but not fetched.
+  It found one real defect in the generator (see `mesh/corpus/CORPUS.md`). Thingi10K is pinned but not fetched.
+- Cross-platform check (CI run 43554766147, step logs read): on **aarch64** Linux (GCC) all 75 files matched the hashes recorded on macOS arm64. On **x86_64** Linux (GCC) 74 of 75 matched and **`sets/many_small_200.mshc` differed**.
+  Cause: the generator called its random-number function three times inside one argument list, `translated(m, next(), next(), next())`, and C++ leaves the order of argument evaluation unspecified (clang evaluates left to right, GCC on x86_64 does not).
+  Fixed by sequencing the calls in separate statements; the macOS hashes are unchanged by the fix. The predicate check (MP02) passed on both Linux architectures with the same class and mutant results (2,000,000 cases each, 0 disagreements, all four mutants caught).
+  Lesson for later POCs: any bit-for-bit claim across compilers needs a cross-compiler run, and argument evaluation order is one more way platforms differ.
 
 ### MP06: parity matrix and license audit: done (documentation audit; nothing was built or run)
 Files: `mesh/parity.csv` (123 SFCGAL v2.3.0 rows; 84 count toward the percentages, the data-model, I/O and beyond-SFCGAL groups are excluded), `mesh/PARITY.md` (method, formula, sources with versions), `mesh/LICENSES.md` (license text read from each project's own file at a pinned tag).
@@ -568,7 +572,7 @@ Written by a sub-agent; I re-derived the percentages from the CSV and checked th
 
 ### Wave 0 status
 Done locally: MP01, MP02 and MP06 meet the Wave 0 criteria on this machine (corpus byte-reproducible, every planted mutant caught, predicate oracles agree at 1e7, every SFCGAL function has a parity row).
-**Not yet confirmed:** x86_64 and aarch64 corpus hash agreement. `EXPECTED_SHA256.txt` was produced on macOS arm64 with Apple clang; GCC and libstdc++ have not built any mesh code yet. The informational CI steps will be the first check, and their step logs must be read (they use `continue-on-error`).
+**Cross-architecture corpus agreement:** aarch64 matched on the first run; x86_64 differed in one file because of an unspecified argument-evaluation order in the generator (fixed, see MP01); the re-run on x86_64 is pending.
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
