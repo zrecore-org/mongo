@@ -1,0 +1,9 @@
+P2D1
+name 203_offset_11
+family offset
+valid 1
+offset 4
+set 1
+poly 2
+4 0 0 40 0 40 40 0 40
+4 10 30 30 30 30 10 10 10

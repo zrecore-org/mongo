@@ -1,0 +1,11 @@
+P2D1
+name 206_inv_bowtie
+family invalid
+valid 0
+offset 0
+set 1
+poly 1
+4 0 0 80 80 80 0 0 80
+set 1
+poly 1
+4 0 0 100 0 100 100 0 100

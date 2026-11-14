@@ -1,0 +1,13 @@
+P2D1
+name 173_selftouch_3
+family selftouch
+valid 1
+offset 0
+set 1
+poly 3
+4 0 0 72 0 72 72 0 72
+4 12 48 24 36 12 24 0 36
+3 36 42 36 30 24 36
+set 1
+poly 1
+4 33 12 74 12 74 20 33 20

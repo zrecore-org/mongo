@@ -1,0 +1,11 @@
+P2D1
+name 084_touch_2
+family touch
+valid 1
+offset 0
+set 1
+poly 1
+4 0 0 15 0 15 15 0 15
+set 1
+poly 1
+4 15 15 30 15 30 30 15 30

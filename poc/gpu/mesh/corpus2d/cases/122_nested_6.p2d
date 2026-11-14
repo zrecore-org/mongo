@@ -1,0 +1,12 @@
+P2D1
+name 122_nested_6
+family nested
+valid 1
+offset 0
+set 1
+poly 2
+4 0 0 400 0 400 400 0 400
+4 80 320 320 320 320 80 80 80
+set 1
+poly 1
+4 40 160 200 160 200 240 40 240

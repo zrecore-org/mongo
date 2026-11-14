@@ -1,0 +1,11 @@
+P2D1
+name 008_rects_8
+family rects
+valid 1
+offset 0
+set 1
+poly 1
+4 4 10 7 10 7 11 4 11
+set 1
+poly 1
+4 5 9 6 9 6 15 5 15

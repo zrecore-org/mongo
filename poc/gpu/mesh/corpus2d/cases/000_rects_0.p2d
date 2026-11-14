@@ -1,0 +1,11 @@
+P2D1
+name 000_rects_0
+family rects
+valid 1
+offset 0
+set 1
+poly 1
+4 3 11 8 11 8 14 3 14
+set 1
+poly 1
+4 2 10 13 10 13 14 2 14

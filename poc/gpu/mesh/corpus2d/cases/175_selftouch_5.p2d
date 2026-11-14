@@ -1,0 +1,12 @@
+P2D1
+name 175_selftouch_5
+family selftouch
+valid 1
+offset 0
+set 1
+poly 2
+4 0 0 36 0 36 36 0 36
+3 18 36 24 27 12 27
+set 1
+poly 1
+4 16 10 28 10 28 19 16 19

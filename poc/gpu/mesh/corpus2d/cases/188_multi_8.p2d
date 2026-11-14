@@ -1,0 +1,14 @@
+P2D1
+name 188_multi_8
+family multi
+valid 1
+offset 0
+set 2
+poly 2
+4 0 0 40 0 40 40 0 40
+4 10 20 20 20 20 10 10 10
+poly 1
+4 60 0 100 0 100 40 60 40
+set 1
+poly 1
+4 37 -3 61 -3 61 18 37 18

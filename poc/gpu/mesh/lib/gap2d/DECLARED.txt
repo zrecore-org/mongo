@@ -1,0 +1,18 @@
+MP08a bars declared BEFORE any library was run (2026-11-14). Corpus hashes: ../../corpus2d/EXPECTED_SHA256.txt (sha256 of that file recorded in REPORT.md).
+Verdict per library, operation and case:
+  CORRECT   result is a structurally valid simple-polygon set (no crossings, no collinear overlaps, no spikes, no repeated vertex in a ring, no zero-area ring)
+            and |exact area(result) - exact area(oracle)| <= tolerance, tolerance chosen by the library's stated resolution:
+              Clipper2 (Paths64, integer grid at scale 1)  : 0.71 * perimeter(result)   (every result vertex is rounded by at most 0.71 grid units)
+              Boost.Geometry (double), Manifold CrossSection : 1e-12 * max(|oracle area|, 1)
+            Manifold also reports a secondary verdict at its own 1e-8 grid (precision_ = 8 in cross_section.cpp): 0.71e-8 * perimeter(result).
+  WRONG     valid-looking output outside the tolerance, or structurally invalid output
+  REFUSED   exception or error status
+  CRASH     signal or nonzero exit without a result; TIMEOUT counted as CRASH (120 s)
+Secondary strictness (reported, not part of the verdict): symmetric-difference area of result vs expected region (same tolerances); count of results whose area is exactly equal.
+A library covers an operation exactly only with 0 WRONG on the exact-integer corpus. Offset: rectilinear polygons, miter join, oracle = polygon union edge-by-d rectangles
+(the Minkowski sum with the square), positive d only. Triangulation: correct = covers the polygon set exactly (symmetric difference 0) and sum of triangle areas equals the polygon
+area exactly (no overlap); zero-area triangles and Steiner points are counted, not failed; Delaunay claimed (CDT, Clipper2 useDelaunay=true): empty-circle test on every interior
+non-polygon edge shared by two triangles, exact in-circle. Convex hull: exact strictly-convex vertex set equal after removing collinear vertices. Area: exact vs double, 1e-12 relative.
+Speed: 1e3 and 1e5 vertex star polygons, single thread, median of 5 repetitions of the operation only (input conversion excluded), 120 s timeout.
+Invalid inputs (20): result classes REFUSED / CRASH / output valid / output invalid; none is "correct" or "wrong" (no oracle exists for invalid input).
+Checker mutants (selftest must fail for each): 1 area sign, 2 skipped hole, 3 union predicate, 4 collinear-overlap check removed, 5 crossing check removed, 6 edge direction ignored.

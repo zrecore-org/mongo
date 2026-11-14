@@ -1,0 +1,233 @@
+== valid corpus: lib op : CORRECT WRONG(area) WRONG_INVALID(structure) REFUSED CRASH  | exact-equal area
+boost    area         :  205    1    0    0    0 | exact 204
+boost    difference   :  187    5    0    0    0 | exact 127
+boost    hull         :  206    0    0    0    0 | exact 0
+boost    intersection :  186    6    0    0    0 | exact 127
+boost    intersects   :  192    0    0    0    0 | exact 0
+boost    isvalid      :  206    0    0    0    0 | exact 0
+boost    offset       :   14    0    0    0    0 | exact 14
+boost    union        :  187    5    0    0    0 | exact 127
+cdt      triangulate  :  206    0    0    0    0 | exact 0
+clipper2 area         :  205    1    0    0    0 | exact 204
+clipper2 difference   :  189    0    3    0    0 | exact 124
+clipper2 intersection :  189    3    0    0    0 | exact 127
+clipper2 intersects   :  156   36    0    0    0 | exact 0
+clipper2 offset       :   14    0    0    0    0 | exact 14
+clipper2 triangulate  :  203    3    0    0    0 | exact 0
+clipper2 union        :  188    0    4    0    0 | exact 124
+earcut   triangulate  :  206    0    0    0    0 | exact 0
+manifold area         :  169    0    0   37    0 | exact 169
+manifold difference   :  100   54    1   37    0 | exact 95
+manifold hull         :  169    0    0   37    0 | exact 0
+manifold intersection :  101   54    0   37    0 | exact 96
+manifold offset       :   14    0    0    0    0 | exact 14
+manifold triangulate  :  169    0    0   37    0 | exact 0
+manifold union        :  112   41    2   37    0 | exact 94
+== non-correct by family
+('boost', 'area', 'sliver30', 'WRONG') 1
+('boost', 'difference', 'huge', 'WRONG') 5
+('boost', 'intersection', 'huge', 'WRONG') 5
+('boost', 'intersection', 'neardeg', 'WRONG') 1
+('boost', 'union', 'huge', 'WRONG') 5
+('clipper2', 'area', 'sliver30', 'WRONG') 1
+('clipper2', 'difference', 'selftouch', 'WRONG_INVALID') 1
+('clipper2', 'difference', 'sliver30', 'WRONG_INVALID') 1
+('clipper2', 'difference', 'sliver40', 'WRONG_INVALID') 1
+('clipper2', 'intersection', 'neardeg', 'WRONG') 3
+('clipper2', 'intersects', 'collinear', 'WRONG') 5
+('clipper2', 'intersects', 'huge', 'WRONG') 1
+('clipper2', 'intersects', 'neardeg', 'WRONG') 12
+('clipper2', 'intersects', 'nested', 'WRONG') 3
+('clipper2', 'intersects', 'rects', 'WRONG') 5
+('clipper2', 'intersects', 'touch', 'WRONG') 10
+('clipper2', 'triangulate', 'selftouch', 'WRONG') 2
+('clipper2', 'triangulate', 'starhole', 'WRONG') 1
+('clipper2', 'union', 'multi', 'WRONG_INVALID') 1
+('clipper2', 'union', 'selftouch', 'WRONG_INVALID') 2
+('clipper2', 'union', 'touch', 'WRONG_INVALID') 1
+('manifold', 'area', 'huge', 'REFUSED') 12
+('manifold', 'area', 'identical', 'REFUSED') 1
+('manifold', 'area', 'neardeg', 'REFUSED') 4
+('manifold', 'area', 'sliver30', 'REFUSED') 10
+('manifold', 'area', 'sliver40', 'REFUSED') 10
+('manifold', 'difference', 'convex', 'WRONG') 10
+('manifold', 'difference', 'huge', 'REFUSED') 12
+('manifold', 'difference', 'identical', 'REFUSED') 1
+('manifold', 'difference', 'multi', 'WRONG') 6
+('manifold', 'difference', 'neardeg', 'REFUSED') 4
+('manifold', 'difference', 'selftouch', 'WRONG_INVALID') 1
+('manifold', 'difference', 'sliver30', 'REFUSED') 10
+('manifold', 'difference', 'sliver40', 'REFUSED') 10
+('manifold', 'difference', 'star', 'WRONG') 21
+('manifold', 'difference', 'starhole', 'WRONG') 17
+('manifold', 'hull', 'huge', 'REFUSED') 12
+('manifold', 'hull', 'identical', 'REFUSED') 1
+('manifold', 'hull', 'neardeg', 'REFUSED') 4
+('manifold', 'hull', 'sliver30', 'REFUSED') 10
+('manifold', 'hull', 'sliver40', 'REFUSED') 10
+('manifold', 'intersection', 'convex', 'WRONG') 11
+('manifold', 'intersection', 'huge', 'REFUSED') 12
+('manifold', 'intersection', 'identical', 'REFUSED') 1
+('manifold', 'intersection', 'multi', 'WRONG') 6
+('manifold', 'intersection', 'neardeg', 'REFUSED') 4
+('manifold', 'intersection', 'neardeg', 'WRONG') 1
+('manifold', 'intersection', 'sliver30', 'REFUSED') 10
+('manifold', 'intersection', 'sliver40', 'REFUSED') 10
+('manifold', 'intersection', 'star', 'WRONG') 21
+('manifold', 'intersection', 'starhole', 'WRONG') 15
+('manifold', 'triangulate', 'huge', 'REFUSED') 12
+('manifold', 'triangulate', 'identical', 'REFUSED') 1
+('manifold', 'triangulate', 'neardeg', 'REFUSED') 4
+('manifold', 'triangulate', 'sliver30', 'REFUSED') 10
+('manifold', 'triangulate', 'sliver40', 'REFUSED') 10
+('manifold', 'union', 'convex', 'WRONG') 8
+('manifold', 'union', 'huge', 'REFUSED') 12
+('manifold', 'union', 'identical', 'REFUSED') 1
+('manifold', 'union', 'multi', 'WRONG') 4
+('manifold', 'union', 'neardeg', 'REFUSED') 4
+('manifold', 'union', 'selftouch', 'WRONG_INVALID') 2
+('manifold', 'union', 'sliver30', 'REFUSED') 10
+('manifold', 'union', 'sliver40', 'REFUSED') 10
+('manifold', 'union', 'star', 'WRONG') 14
+('manifold', 'union', 'starhole', 'WRONG') 15
+== structural-invalid outputs by code, and whether their winding area was within tolerance
+clipper2 union 090_touch_8 collinear_overlap area_ok_rel=1 area_ok_grid1=1 diff=0
+clipper2 difference 130_sliver30_4 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+clipper2 difference 140_sliver40_4 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+clipper2 union 175_selftouch_5 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+clipper2 difference 175_selftouch_5 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+manifold union 175_selftouch_5 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+manifold difference 175_selftouch_5 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+clipper2 union 179_selftouch_9 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+manifold union 179_selftouch_9 repeated_vertex area_ok_rel=1 area_ok_grid1=1 diff=0
+clipper2 union 185_multi_5 repeated_vertex area_ok_rel=0 area_ok_grid1=1 diff=-6.63529
+== Manifold at its own 1e-8 grid (secondary): bool/offset rows
+{('union', 'ok_grid8'): 153, ('intersection', 'ok_grid8'): 155, ('difference', 'ok_grid8'): 154, ('offset', 'ok_grid8'): 14}
+== symdiff strictness: results with area OK but symdiff beyond tolerance
+manifold union 025_convex_1 symdiff=1.60433e-06 area diff=2.75118e-08
+manifold difference 026_convex_2 symdiff=2.1743e-06 area diff=-2.72491e-08
+manifold union 036_convex_12 symdiff=9.49626e-07 area diff=-1.69882e-07
+manifold union 039_convex_15 symdiff=1.80765e-06 area diff=-7.28692e-09
+clipper2 intersection 041_star_1 symdiff=979.517 area diff=98.2995
+manifold union 043_star_3 symdiff=1.5522e-06 area diff=1.46917e-07
+manifold union 044_star_4 symdiff=1.85788e-06 area diff=1.2904e-07
+manifold intersection 049_star_9 symdiff=2.73345e-06 area diff=2.34782e-08
+manifold union 053_star_13 symdiff=8.58639e-07 area diff=3.56114e-08
+manifold union 055_star_15 symdiff=2.33947e-06 area diff=-2.14432e-07
+manifold difference 057_star_17 symdiff=3.92855e-06 area diff=-1.13128e-08
+manifold union 058_star_18 symdiff=5.11772e-07 area diff=-1.03043e-08
+manifold union 060_star_20 symdiff=1.4811e-06 area diff=1.47836e-07
+manifold union 062_star_22 symdiff=2.5084e-06 area diff=-1.02903e-07
+manifold union 063_star_23 symdiff=2.38303e-06 area diff=-1.37952e-07
+manifold difference 070_starhole_6 symdiff=1.3165e-06 area diff=-4.51169e-10
+manifold intersection 071_starhole_7 symdiff=2.67474e-06 area diff=-9.42457e-08
+manifold union 072_starhole_8 symdiff=4.2041e-06 area diff=-1.27337e-07
+manifold union 073_starhole_9 symdiff=2.70583e-06 area diff=-9.65705e-08
+manifold intersection 075_starhole_11 symdiff=1.90593e-06 area diff=-5.19973e-08
+manifold intersection 078_starhole_14 symdiff=2.92631e-06 area diff=-7.14033e-08
+manifold union 080_starhole_16 symdiff=4.086e-06 area diff=2.08429e-07
+== triangulation extras (valid corpus)
+clipper2 {'n': 206, 'degenerate_tris': 0, 'cases_with_degenerate': 0, 'steiner': 0, 'cases_with_steiner': 0, 'delaunay_edges': 903, 'delaunay_viol': 0, 'cases_with_delaunay_viol': 0, 'not_covered': 3, 'overlap': 3}
+manifold {'n': 169, 'degenerate_tris': 16, 'cases_with_degenerate': 10, 'steiner': 0, 'cases_with_steiner': 0, 'delaunay_edges': 844, 'delaunay_viol': 59, 'cases_with_delaunay_viol': 35, 'not_covered': 0, 'overlap': 0}
+earcut {'n': 206, 'degenerate_tris': 0, 'cases_with_degenerate': 0, 'steiner': 0, 'cases_with_steiner': 0, 'delaunay_edges': 909, 'delaunay_viol': 216, 'cases_with_delaunay_viol': 82, 'not_covered': 0, 'overlap': 0}
+cdt {'n': 206, 'degenerate_tris': 0, 'cases_with_degenerate': 0, 'steiner': 0, 'cases_with_steiner': 0, 'delaunay_edges': 909, 'delaunay_viol': 0, 'cases_with_delaunay_viol': 0, 'not_covered': 0, 'overlap': 0}
+== triangulation non-correct detail
+clipper2 064_starhole_0 WRONG covers=0 no_overlap=0 symdiff=29695.5 
+manifold 115_identical_7 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 126_sliver30_0 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 127_sliver30_1 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 128_sliver30_2 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 129_sliver30_3 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 130_sliver30_4 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 131_sliver30_5 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 132_sliver30_6 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 133_sliver30_7 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 134_sliver30_8 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 135_sliver30_9 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 136_sliver40_0 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 137_sliver40_1 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 138_sliver40_2 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 139_sliver40_3 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 140_sliver40_4 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 141_sliver40_5 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 142_sliver40_6 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 143_sliver40_7 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 144_sliver40_8 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 145_sliver40_9 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 154_neardeg_8 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 155_neardeg_9 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 156_neardeg_10 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 157_neardeg_11 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 158_huge_rects_0 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 159_huge_rects_1 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 160_huge_rects_2 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 161_huge_rects_3 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 162_huge_rects_4 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 163_huge_rects_5 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 164_huge_star_0 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 165_huge_star_1 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 166_huge_star_2 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 167_huge_star_3 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 168_huge_star_4 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+manifold 169_huge_star_5 REFUSED covers= no_overlap= symdiff= exception: Values exceed permitted range
+clipper2 173_selftouch_3 WRONG covers=0 no_overlap=0 symdiff=348 
+clipper2 177_selftouch_7 WRONG covers=0 no_overlap=0 symdiff=154.667 
+== hull wrong
+== boost isvalid / intersects wrong, area wrong
+209_inv_one_vertex_ring intersects want 0 got 1 
+210_inv_dup_vertex isvalid want 0 got 1 
+220_inv_closed_by_repeat isvalid want 0 got 1 
+224_inv_all_same_vertex intersects want 0 got 1 
+== INVALID inputs (20), classification of each library/op
+('boost', 'area') {'area_returned': 20}
+('boost', 'difference') {'output_valid': 20}
+('boost', 'hull') {'hull_output': 20}
+('boost', 'intersection') {'output_valid': 17, 'output_invalid': 3}
+('boost', 'intersects') {'answered:1': 20}
+('boost', 'isvalid') {'answered:0': 18, 'answered:1': 2}
+('boost', 'union') {'output_valid': 19, 'output_invalid': 1}
+('cdt', 'triangulate') {'REFUSED': 6, 'output_covers_polygon': 8, 'output_nonsense': 6}
+('clipper2', 'area') {'area_returned': 20}
+('clipper2', 'difference') {'output_valid': 20}
+('clipper2', 'intersection') {'output_valid': 20}
+('clipper2', 'intersects') {'answered:1': 16, 'answered:0': 4}
+('clipper2', 'triangulate') {'REFUSED': 13, 'output_covers_polygon': 5, 'output_nonsense': 2}
+('clipper2', 'union') {'output_valid': 20}
+('earcut', 'triangulate') {'output_nonsense': 9, 'output_covers_polygon': 11}
+('manifold', 'area') {'area_returned': 19, 'REFUSED': 1}
+('manifold', 'difference') {'output_valid': 19, 'REFUSED': 1}
+('manifold', 'hull') {'hull_output': 19, 'REFUSED': 1}
+('manifold', 'intersection') {'output_valid': 19, 'REFUSED': 1}
+('manifold', 'triangulate') {'output_nonsense': 8, 'output_covers_polygon': 11, 'REFUSED': 1}
+('manifold', 'union') {'output_valid': 19, 'REFUSED': 1}
+== isvalid on invalid corpus: boost says valid for
+206_inv_bowtie boost_is_valid=0 checker_why=
+207_inv_pentagram boost_is_valid=0 checker_why=
+208_inv_two_vertex_ring boost_is_valid=0 checker_why=
+209_inv_one_vertex_ring boost_is_valid=0 checker_why=
+210_inv_dup_vertex boost_is_valid=1 checker_why=
+211_inv_zero_area boost_is_valid=0 checker_why=
+212_inv_hole_outside boost_is_valid=0 checker_why=
+213_inv_hole_crossing boost_is_valid=0 checker_why=
+214_inv_overlap_outers boost_is_valid=0 checker_why=
+215_inv_spike boost_is_valid=0 checker_why=
+216_inv_duplicate_ring boost_is_valid=0 checker_why=
+217_inv_outer_clockwise boost_is_valid=0 checker_why=
+218_inv_hole_ccw boost_is_valid=0 checker_why=
+219_inv_figure8_vertex boost_is_valid=0 checker_why=
+220_inv_closed_by_repeat boost_is_valid=1 checker_why=
+221_inv_hole_edge_overlap boost_is_valid=0 checker_why=
+222_inv_huge_bowtie boost_is_valid=0 checker_why=
+223_inv_hole_in_hole boost_is_valid=0 checker_why=
+224_inv_all_same_vertex boost_is_valid=0 checker_why=
+225_inv_overlapping_holes boost_is_valid=0 checker_why=
+== crashes/timeouts/checker errors
+== refusal messages
+1 ('cdt', 'exception: Intersecting constraint edges detected: (10, 11) intersects (5, 6)')
+3 ('cdt', 'exception: Intersecting constraint edges detected: (2, 3) intersects (0, 1)')
+1 ('cdt', 'exception: Intersecting constraint edges detected: (4, 5) intersects (1, 2)')
+1 ('cdt', 'exception: Intersecting constraint edges detected: (6, 7) intersects (1, 2)')
+2 ('clipper2', 'TriangulateResult=1')
+4 ('clipper2', 'TriangulateResult=2')
+7 ('clipper2', 'TriangulateResult=3')
+228 ('manifold', 'exception: Values exceed permitted range')

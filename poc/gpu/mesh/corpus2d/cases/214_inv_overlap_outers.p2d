@@ -1,0 +1,13 @@
+P2D1
+name 214_inv_overlap_outers
+family invalid
+valid 0
+offset 0
+set 2
+poly 1
+4 0 0 50 0 50 50 0 50
+poly 1
+4 25 25 75 25 75 75 25 75
+set 1
+poly 1
+4 0 0 100 0 100 100 0 100

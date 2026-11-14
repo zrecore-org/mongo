@@ -1,0 +1,11 @@
+P2D1
+name 146_neardeg_0
+family neardeg
+valid 1
+offset 0
+set 1
+poly 1
+3 2097152 2097152 1048576 1048577 0 0
+set 1
+poly 1
+3 2097153 2097152 1048577 1048577 1 0

@@ -1,0 +1,11 @@
+P2D1
+name 045_star_5
+family star
+valid 1
+offset 0
+set 1
+poly 1
+5 380 380 588 324 734 344 660 420 701 433
+set 1
+poly 1
+5 530 576 282 912 267 830 232 819 502 468

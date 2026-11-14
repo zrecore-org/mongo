@@ -1,0 +1,11 @@
+P2D1
+name 095_touch_13
+family touch
+valid 1
+offset 0
+set 1
+poly 1
+4 0 0 9 0 9 9 0 9
+set 1
+poly 1
+4 0 0 3 0 3 3 0 3

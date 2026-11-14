@@ -1,0 +1,12 @@
+P2D1
+name 171_selftouch_1
+family selftouch
+valid 1
+offset 0
+set 1
+poly 2
+4 0 0 48 0 48 48 0 48
+3 24 48 32 36 16 36
+set 1
+poly 1
+4 22 23 61 23 61 64 22 64

@@ -1,0 +1,9 @@
+P2D1
+name 196_offset_4
+family offset
+valid 1
+offset 6
+set 1
+poly 2
+4 0 0 44 0 44 44 0 44
+4 11 33 33 33 33 11 11 11

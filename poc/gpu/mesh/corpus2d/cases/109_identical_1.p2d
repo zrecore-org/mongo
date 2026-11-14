@@ -1,0 +1,13 @@
+P2D1
+name 109_identical_1
+family identical
+valid 1
+offset 0
+set 1
+poly 2
+4 0 0 100 0 100 100 0 100
+4 20 80 80 80 80 20 20 20
+set 1
+poly 2
+4 0 0 100 0 100 100 0 100
+4 20 80 80 80 80 20 20 20

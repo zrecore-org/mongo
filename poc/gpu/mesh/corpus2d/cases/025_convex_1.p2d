@@ -1,0 +1,11 @@
+P2D1
+name 025_convex_1
+family convex
+valid 1
+offset 0
+set 1
+poly 1
+4 478 127 846 580 449 254 332 85
+set 1
+poly 1
+3 696 755 153 502 516 302

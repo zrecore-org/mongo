@@ -1,0 +1,11 @@
+P2D1
+name 098_collinear_2
+family collinear
+valid 1
+offset 0
+set 1
+poly 1
+6 0 0 40 0 40 20 10 20 10 40 0 40
+set 1
+poly 1
+4 20 20 50 20 50 30 20 30

@@ -1,0 +1,12 @@
+P2D1
+name 212_inv_hole_outside
+family invalid
+valid 0
+offset 0
+set 1
+poly 2
+4 0 0 50 0 50 50 0 50
+4 60 80 80 80 80 60 60 60
+set 1
+poly 1
+4 0 0 100 0 100 100 0 100

@@ -1,0 +1,11 @@
+P2D1
+name 031_convex_7
+family convex
+valid 1
+offset 0
+set 1
+poly 1
+4 498 750 585 1000 163 675 282 618
+set 1
+poly 1
+3 282 985 388 176 927 180

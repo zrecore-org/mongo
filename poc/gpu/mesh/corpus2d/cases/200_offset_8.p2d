@@ -1,0 +1,8 @@
+P2D1
+name 200_offset_8
+family offset
+valid 1
+offset 5
+set 1
+poly 1
+6 0 0 24 0 24 8 8 8 8 24 0 24

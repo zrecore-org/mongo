@@ -1,0 +1,11 @@
+P2D1
+name 104_collinear_8
+family collinear
+valid 1
+offset 0
+set 1
+poly 1
+6 0 0 20 0 20 10 10 10 10 20 0 20
+set 1
+poly 1
+4 10 0 30 0 30 20 10 20

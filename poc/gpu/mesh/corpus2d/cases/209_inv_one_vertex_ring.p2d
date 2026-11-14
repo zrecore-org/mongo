@@ -1,0 +1,11 @@
+P2D1
+name 209_inv_one_vertex_ring
+family invalid
+valid 0
+offset 0
+set 1
+poly 1
+1 10 10
+set 1
+poly 1
+4 0 0 100 0 100 100 0 100
