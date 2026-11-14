@@ -1,0 +1,27 @@
+H2D1
+name 217_alpha_grid
+family grid
+mode alpha
+alpha 578 25
+points 21
+0 0
+0 2
+0 4
+0 6
+0 8
+2 0
+2 2
+2 4
+2 8
+4 2
+4 4
+4 8
+6 0
+6 4
+6 6
+6 8
+8 0
+8 6
+10 0
+10 4
+10 8

@@ -1,0 +1,24 @@
+H2D1
+name 218_alpha_grid
+family grid
+mode alpha
+alpha 10 1
+points 18
+0 0
+0 2
+0 4
+0 6
+0 8
+0 10
+0 12
+2 0
+2 2
+2 4
+2 6
+2 8
+2 10
+4 0
+4 2
+4 6
+4 8
+4 12

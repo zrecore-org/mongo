@@ -1,0 +1,7 @@
+H2D1
+name 247_repair_orth
+family orth
+mode repair
+rule 1
+rings 1
+6 16 28 30 28 30 18 24 18 24 23 16 23

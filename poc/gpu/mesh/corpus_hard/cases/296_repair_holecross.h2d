@@ -1,0 +1,8 @@
+H2D1
+name 296_repair_holecross
+family holecross
+mode repair
+rule 0
+rings 2
+4 0 0 30000 0 30000 30000 0 30000
+3 14892 20348 27143 26474 27143 14223

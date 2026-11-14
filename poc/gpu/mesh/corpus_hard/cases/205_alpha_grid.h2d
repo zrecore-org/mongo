@@ -1,0 +1,27 @@
+H2D1
+name 205_alpha_grid
+family grid
+mode alpha
+alpha 10 1
+points 21
+0 0
+0 2
+0 4
+0 6
+2 0
+2 2
+2 4
+4 4
+6 0
+6 2
+6 4
+6 6
+8 2
+8 4
+8 6
+10 0
+10 2
+10 4
+12 0
+12 2
+12 6

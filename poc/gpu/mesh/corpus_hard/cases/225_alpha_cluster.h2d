@@ -1,0 +1,22 @@
+H2D1
+name 225_alpha_cluster
+family cluster
+mode alpha
+alpha 5 2
+points 16
+34 33
+41 28
+35 30
+34 44
+29 37
+37 38
+41 44
+91 73
+89 69
+86 65
+76 61
+83 63
+85 59
+82 73
+81 69
+88 60
