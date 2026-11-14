@@ -18,6 +18,9 @@ machine's GPU lock). Nothing needs it to build or run the POCs, CI does not use 
 self-hosted `apple-gpu` job, and it is not intended to be shipped or moved under `src/`. Skip it on any
 machine whose GPU you do not share.
 
+`tools/t4_ci_turn.sh` is likewise optional and local-only: a first-come-first-served queue (a file in `/tmp`) for pushes that start a job on the one
+shared hosted T4 runner used by this repository and the pg-strom fork. Nothing in CI uses it.
+
 CI (`.github/workflows/gpu-poc.yml`) builds and runs the correctness checks on lavapipe. It has no GPU, so it
 says nothing about speed.
 

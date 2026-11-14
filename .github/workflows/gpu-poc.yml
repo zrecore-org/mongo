@@ -36,6 +36,7 @@ on:
       - '!poc/gpu/run_gpu_pocs.sh'
       - '!poc/gpu/run_matrix.sh'
       - '!poc/gpu/tools/with_gpu_lock.sh'
+      - '!poc/gpu/tools/t4_ci_turn.sh'
   pull_request:
     paths:
       - 'poc/gpu/**'
@@ -46,6 +47,7 @@ on:
       - '!poc/gpu/run_gpu_pocs.sh'
       - '!poc/gpu/run_matrix.sh'
       - '!poc/gpu/tools/with_gpu_lock.sh'
+      - '!poc/gpu/tools/t4_ci_turn.sh'
   workflow_dispatch:
     inputs:
       nvidia_gpu:
