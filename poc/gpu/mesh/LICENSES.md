@@ -145,3 +145,11 @@ Required dependencies: none beyond a C++17 compiler and CMake; TBB optional (`GE
 | CoACD | convex decomposition | 1.0.14, 1401ce2a7ae1ed89c65ab958b48d489350c233c7 | https://raw.githubusercontent.com/SarahWeiii/CoACD/1.0.14/LICENSE ("MIT License, Copyright (c) 2022 Xinyue Wei, Minghua Liu"); its own dependencies not audited | MIT |
 | OpenVDB | voxelization | v14.0.0, ecae2bda85744412b0cd47e1b8e1e4e76beb7b88 | https://raw.githubusercontent.com/AcademySoftwareFoundation/openvdb/v14.0.0/LICENSE (Apache License text); dependencies (Boost, TBB, optional others) not audited | Apache-2.0 |
 | libigl (fast winding number) | winding number | v2.6.4, 7100764c2a2833284a8bdfa9b948d2b3bf124624 | files `LICENSE.MPL2` ("Mozilla Public License Version 2.0") and `LICENSE.GPL` ("GNU GENERAL PUBLIC LICENSE Version 3") at https://raw.githubusercontent.com/libigl/libigl/v2.6.4/ | MPL-2.0 or GPL-3.0 (**not permissive**; not recommended) |
+
+## MP17 plane-based boolean sources (audited 2026-11-14 by a sub-agent; `lib/planebased/SURVEY.md`)
+| Item | License as found | Use |
+|---|---|---|
+| Campen and Kobbelt 2010; Nehring-Wirxel et al. 2021; EMBER 2022 (papers) | papers; no source release stated for the first two | read for the mathematics only; implementation is clean-room |
+| EMBER binary (project page) | "binary implementation, contact the authors"; no source, no license | not downloaded, not used |
+| zalo/ember-csg (third-party port, d7f9674f) | MIT; but its geometry dependency has no license and its classification is not exact | inspected for its license only; not used |
+| juliusnehring/mesh-kernel (9f6a63ec, `integer-plane-geometry`) | **no LICENSE file** | inspected for its license only; no code read or copied; not used |

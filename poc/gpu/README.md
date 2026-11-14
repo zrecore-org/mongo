@@ -55,6 +55,7 @@ redistributing anything.
 | Shewchuk `predicates.c` (J. R. Shewchuk, CMU) | Robust `orient2d`/`orient3d`, the oracle for the 3D mesh predicate checks (`mesh/oracle/`); fetched into `build/`, never committed | Public domain (its header: "Placed in the public domain by Jonathan Richard Shewchuk") | <https://www.cs.cmu.edu/~quake/robust.html> |
 | Boost.Multiprecision (`cpp_int`) | Exact integer arithmetic for the mesh oracles and exact volumes (`mesh/harness/exact.h`), used from the copy vendored in `src/third_party/boost/libs/multiprecision` | BSL-1.0 | <https://github.com/boostorg/multiprecision> |
 | Thingi10K | Optional real-world mesh corpus for the mesh POCs; pinned download script only, nothing fetched yet, models never committed. Each model has its own license; the organizing code is Apache-2.0 | per model (10 licenses) | <https://github.com/Thingi10K/Thingi10K> |
+| Plane-based exact booleans: Campen and Kobbelt 2010, Nehring-Wirxel, Trettner and Kobbelt 2021 (octree-embedded BSPs), Trettner et al. 2022 (EMBER) | Papers whose plane-based fixed-width integer arithmetic and bit-width bounds (b >= 9L + 18.6) the MP17 POC re-derives and implements clean-room; no code used | papers | <https://arxiv.org/abs/2103.02486> |
 | NumPy | `verify_df64.py` | BSD-3-Clause | <https://numpy.org> |
 | CMake | Build system | BSD-3-Clause | <https://cmake.org> |
 | actions/checkout (GitHub) | CI | MIT | <https://github.com/actions/checkout> |
