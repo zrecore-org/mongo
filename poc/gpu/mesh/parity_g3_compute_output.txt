@@ -1,0 +1,80 @@
+counted rows: baseline 84, G3 84
+
+BASELINE check: parity.csv (must equal PARITY.md: 2D 44.4/86.1, 3D 25.0/88.6, 2.5D 50.0/100, 3D+2.5D 27.1/89.6)
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36  16   0   9   6   3   2   0   44.4%   86.1%   69.4%
+3D        44  11   0  21   7   5   0   0   25.0%   88.6%   72.7%
+2.5D       4   2   0   1   1   0   0   0   50.0%  100.0%   75.0%
+3D+2.5D   48  13   0  22   8   5   0   0   27.1%   89.6%   72.9%
+baseline estimate sums (PARITY.md says 2D 34, 3D 55, 2.5D 2):
+  baseline 2D: 34-34 pw over 15 partial+write-ourselves rows (0 without an estimate)
+  baseline 3D: 55-55 pw over 28 partial+write-ourselves rows (0 without an estimate)
+  baseline 2.5D: 2-2 pw over 2 partial+write-ourselves rows (0 without an estimate)
+
+A. G3 plain status (tested-evidence-adjusted, same definitions)
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36  16   0  11   4   3   2   0   44.4%   86.1%   75.0%
+3D        44   9   0  23   7   5   0   0   20.5%   88.6%   72.7%
+2.5D       4   2   0   1   1   0   0   0   50.0%  100.0%   75.0%
+3D+2.5D   48  11   0  24   8   5   0   0   22.9%   89.6%   72.9%
+  G3 2D: 23-27 pw over 15 partial+write-ourselves rows (1 without an estimate)
+  G3 3D: 61-61 pw over 30 partial+write-ourselves rows (0 without an estimate)
+  G3 2.5D: 2-2 pw over 2 partial+write-ourselves rows (0 without an estimate)
+
+B. G3 under the fidelity requirement (needs_exactness yes or maybe must be exact on the tested corpus)
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36   5   7  11   5   3   2   3   13.9%   77.8%   63.9%
+3D        44   6   3  23   7   5   0   0   13.6%   88.6%   72.7%
+2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
+3D+2.5D   48   6   5  24   8   5   0   0   12.5%   89.6%   72.9%
+
+B-sens-1. as B, but counting exact-thin rows (3D booleans pending MP24, 2D offset) as exact
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36   6   6  11   5   3   2   3   16.7%   77.8%   63.9%
+3D        44   9   0  23   7   5   0   0   20.5%   88.6%   72.7%
+2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
+3D+2.5D   48   9   2  24   8   5   0   0   18.8%   89.6%   72.9%
+
+B-sens-2. as B, but only needs_exactness == yes counts as needing exactness
+bucket     N   C  CU   P   W   I   U  UN  without  with   (C+P)
+2D        36  11   2  11   4   3   2   3   30.6%   77.8%   66.7%
+3D        44   6   3  23   7   5   0   0   13.6%   88.6%   72.7%
+2.5D       4   0   2   1   1   0   0   0    0.0%  100.0%   75.0%
+3D+2.5D   48   6   5  24   8   5   0   0   12.5%   89.6%   72.9%
+
+Bars (suggested 70% without, 90% with):
+  A 2D: without 44.4% not met; with 86.1% not met
+  A 3D: without 20.5% not met; with 88.6% not met
+  B 2D: without 13.9% not met; with 77.8% not met
+  B 3D: without 13.6% not met; with 88.6% not met
+
+Rows counted 'covered' in A whose exactness is untested or thin (needs_exactness yes/maybe):
+  2D   Distance 2D [untested]
+  2D   Covers 2D [untested]
+  2D   IsSimple [untested]
+  2D   Centroid 2D [untested]
+  2D   Length 2D [untested]
+  3D   Union 3D (closed solids) [exact-thin]
+  3D   Intersection 3D (closed solids) [exact-thin]
+  3D   Difference 3D (closed solids) [exact-thin]
+  2D   Offset polygon (2D) [exact-thin]
+  2.5D Constrained Delaunay triangulation (2.5D) [untested]
+  2.5D Triangulate polygon (CG_Triangulate) [untested]
+  2D   Simplify 2D (Douglas-Peucker class) [untested]
+
+Rows in B with no sized exact route (UN):
+  2D   Union 2D
+  2D   Intersection 2D
+  2D   Difference 2D
+
+Biggest remaining gaps: infeasible/unverified rows in counted groups:
+  3D   infeasible-in-product  Extrude straight skeleton (polygon, angles, weights)
+  3D   infeasible-in-product  Roof: hipped
+  3D   infeasible-in-product  Roof: gable
+  3D   infeasible-in-product  Roof: skillion
+  2D   infeasible-in-product  Straight skeleton (2D)
+  2D   infeasible-in-product  Straight skeleton with M = distance to border
+  2D   infeasible-in-product  Straight skeleton partition
+  2D   unverified             Approximate medial axis
+  2D   unverified             Projected medial axis
+  3D   infeasible-in-product  3D alpha wrapping
