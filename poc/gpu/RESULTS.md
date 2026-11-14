@@ -493,10 +493,32 @@ to the CPU on the same batches), at most 16 groups; the `_special` NaN tracker i
 - One group: soft is as fast as df64 (the kernel is bound by reading the doubles, so the roughly ten emulated adds per element are hidden). Two repeat runs of the 4M row gave GPU-kernel times of 4.2 ms (soft) and 3.9 ms (df64); the 7.78 above was
   noise. At 1M, 4M and 16M the repeat kernel times are 1.31 / 4.2 / 13.3 ms (soft) against 1.27 / 3.9 / 14.3 ms (df64).
 - Sixteen groups: soft is 2.4x to 2.7x slower than df64 (it keeps 16 sums and 16 addends as 64-bit values per thread) and slower than the CPU at every size up to 16M (0.23x to 0.44x). Where df64 reached break-even at 16M, soft does not.
-- Not measured: the T4 and lavapipe (CI steps are in `gpu-poc.yml`, informational), `$stdDev` in soft form, other group counts, a Newton-style faster alternative, a wider exponent window, and any GPU without `shaderInt64`.
+- Not measured: `$stdDev` in soft form, other group counts, a Newton-style faster alternative, a wider exponent window, and any GPU without `shaderInt64`.
+
+**CI run 43546251622 (lavapipe x86_64 and aarch64, Tesla T4; step logs read, the steps are informational so the green mark alone proves nothing).**
+- Exact add: the host check passes on all three jobs (2,320,004 pairs, mutants caught). The device probe passes on every driver: llvmpipe (LLVM 20.1.2) and the Tesla T4 both match hardware on all 928,004 pairs.
+- Grouped (1M values): every group bit-identical to the CPU for G = 1, 2, 4 and 16 on lavapipe (both architectures) and the T4.
+- Random data, 200 batches of 100k: **identical to CPU `$sum` in 200 of 200 on aarch64 lavapipe and the M1, and 199 of 200 (max 1 ulp) on x86_64 lavapipe and the T4.** The CPU's own `$sum` on shuffled input scores the same 199 of 200 on that data
+  (same generator on libstdc++ gives different values from the macOS runs), so the one miss is the CPU's order sensitivity, not a soft-add error. df64 managed 2 of 200 on the M1.
+- Ill-conditioned (+1e10, 1M small, -1e10; Linux data): soft is exact (0 ulp), CPU `$sum` is 3,617,436 ulp off, naive double 909,587,100 ulp. Determinism (30 runs, 5 grid sizes: one result each) and the fallback flags (1e300, NaN, denormal set it; clean data does not) match the M1.
+- T4 speed (ms, GPU path total with PCIe copies; CPU `$sum` / df64 / soft; same run, so directly comparable):
+
+  | G | n | CPU `$sum` | GPU df64 | GPU soft | soft vs CPU |
+  |---|---|---|---|---|---|
+  | 1 | 1M | 6.97 | 1.43 | 1.62 | 4.3x |
+  | 1 | 4M | 27.9 | 5.41 | 6.09 | 4.6x |
+  | 1 | 16M | 111.8 | 21.3 | 23.4 | 4.8x |
+  | 16 | 1M | 2.78 | 2.65 | 5.51 | 0.50x |
+  | 16 | 4M | 11.1 | 7.85 | 15.1 | 0.74x |
+  | 16 | 16M | 44.7 | 31.1 | 47.7 | 0.94x |
+
+  One group: the soft kernel costs 10% to 14% more than df64 in total (kernel time 4.05 ms vs 3.12 at 4M, 15.4 vs 12.9 at 16M) and still beats the CPU by 4.3x to 4.8x, where df64 reaches 4.9x to 5.3x.
+  Sixteen groups: soft is 1.5x to 2x slower than df64 and no faster than the CPU up to 16M (0.94x), where df64 gets 1.05x to 1.44x. On the T4 the penalty for soft over df64 is smaller than on the M1 (1.5x vs 2.4x to 2.7x for 16 groups).
+  Pipeline create on the T4: 219 ms (G=1) and 226 ms (G=16) for the soft kernel, against 17 to 20 ms and about 82 ms for df64.
+- This run did not use the locked-clocks setup for POC 12, and it is a single run, so differences of 10% are within what earlier T4 runs showed.
 
 **Reading.** For one group (and probably a few) the integer-binary64 kernel removes the main objection to GPU `$sum`: it is bit-identical to the CPU on well-conditioned data and costs nothing extra over df64 on the M1.
-It does not help the many-group case, and it needs `shaderInt64` (present on the M1, T4 and lavapipe; the fork notes that MoltenVK's feature flags over-report, so the startup probe is still required: the device probe here is that probe for the add).
+It does not help the many-group case (on the T4 and the M1 it is slower than df64 and no faster than the CPU at 16 groups), and it needs `shaderInt64` (present on the M1, T4 and lavapipe, all verified bit-exact for the add; the fork notes that MoltenVK's feature flags over-report, so the startup probe is still required: the device probe here is that probe for the add).
 
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
@@ -505,7 +527,7 @@ It does not help the many-group case, and it needs `shaderInt64` (present on the
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
   Update (POC 12): an integer-emulated binary64 `$sum` was bit-identical to the CPU on well-conditioned data on the M1 for 1 to 16 groups, at df64 speed for one group and 2.4x to 2.7x slower than df64 for 16
-  groups; the T4 and lavapipe are not yet measured, so the "opt-in because not bit-identical" condition is only provisionally relaxed for one group.
+  groups. CI confirmed the exactness on lavapipe and the T4 (199 to 200 of 200 identical, every group identical) and measured the T4 cost: 10% to 14% over df64 for one group, 1.5x to 2x for 16. The "opt-in because not bit-identical" condition is relaxed for one to a few groups on well-conditioned data, with the ill-conditioned (order-dependent) caveat.
 - Phase 1 candidates, in order: (1) selection/percentile (exact, 6x to 12x on the T4); (2) `$stdDev` with one or few
   groups (POC 9: two df64 passes, accuracy matches the CPU; 6x to 7x on the T4, 2.9x to 3.3x on the M1 from 1M values
   for one group; with 16 groups it loses to the CPU on the M1 until about 16M values); (3) `$sum` with few groups;
