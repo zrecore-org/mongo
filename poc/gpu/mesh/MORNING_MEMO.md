@@ -15,7 +15,7 @@ Everything below is recorded with evidence in `poc/gpu/RESULTS.md`; this is the 
 | Thin features (below 1e-12 of scale) | **vanish** (epsilon is a floor; cannot be lowered) | exact | exact |
 | Vertex-contact solids | correct | **wrong** (vertex contact; platform dependent: the tie is broken by pointer order) | **correct with the second patch (MP22)** on an untouched 1100-pair set: 0 FAIL, 0 REFUSED on the M1 and on Linux x86_64 and aarch64 (the first patch alone failed 30 rows on Linux) |
 | Bad input | refuses cleanly (12 of 21 refused, 0 FAIL) | never refuses; one open result | validator refuses 18 of 21, 0 FAIL |
-| Determinism | same bytes serially | same bytes with one thread | same bytes with one thread; Linux x86_64 and aarch64 agree byte for byte, differ from the M1 (all rows still correct) |
+| Determinism | **same bytes serially, and byte-identical on the M1, Linux x86_64 and Linux aarch64 on the G1 corpus (81 of 81 files; tier 3 holds, measured)** | same bytes with one thread | same bytes with one thread; Linux x86_64 and aarch64 agree byte for byte, differ from the M1 (all rows still correct) |
 | Licence | Apache-2.0 | BSD-3 core (TetGen, Triangle, HLBFGS off, verified) | same; patch is local, upstream issue #413 filed, no reply |
 Closed alternatives: 512-bit integer plane booleans (800x slower than Shewchuk's adaptive predicate, kill criterion hit); Cherchi et al. 2022 (needs LGPL Indirect_Predicates headers, not scored); wrapping Geogram with guards (MP18/MP18b failed).
 
