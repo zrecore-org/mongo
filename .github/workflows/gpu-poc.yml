@@ -159,6 +159,12 @@ jobs:
         continue-on-error: true
         run: ./run.sh mesh/mp09_orient_filter device 400000
 
+      - name: Mesh, MP10 LBVH and pair emission on the lavapipe device (informational)
+        working-directory: poc/gpu
+        timeout-minutes: 20
+        continue-on-error: true
+        run: ./run.sh mesh/mp10_lbvh device 0.1
+
       - name: POC 4, failure handling (no GPU)
         working-directory: poc/gpu
         run: ./build/poc4_fallback
@@ -479,6 +485,12 @@ jobs:
           POC2_SOFT=1 ./run.sh poc2_sum accuracy
           POC2_SOFT=1 ./run.sh poc2_sum bench 1
           POC2_SOFT=1 ./run.sh poc2_sum bench 16
+
+      - name: "Mesh, MP10 LBVH and pair emission on the GPU (informational)"
+        working-directory: poc/gpu
+        timeout-minutes: 25
+        continue-on-error: true
+        run: ./run.sh mesh/mp10_lbvh device 1.0
 
       - name: "Mesh, MP09 orient3d filter on the GPU (informational)"
         working-directory: poc/gpu
