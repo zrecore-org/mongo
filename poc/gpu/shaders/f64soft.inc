@@ -9,6 +9,7 @@
 // Literals use the `ul` suffix in both languages (64-bit in C++ on LP64 targets: macOS and Linux).
 // Domain: finite inputs, no subnormals, results that stay normal (the caller checks the exponent window; see softsum.comp).
 // Zero of either sign is allowed. Every shift count is below 64 on purpose (a shift by >= the width is undefined in SPIR-V).
+#define F64SOFT_INC_INCLUDED 1
 #ifdef F64SOFT_C
 #include <cstdint>
 typedef unsigned uint;
@@ -59,6 +60,46 @@ FN uint64_t f64_add(uint64_t a, uint64_t b) {
     return (uint64_t(sa) << 63) | (uint64_t(e) << 52) | (m & kMant);
 }
 FN uint64_t f64_sub(uint64_t a, uint64_t b) { return f64_add(a, b ^ 0x8000000000000000ul); }
+
+// Exact IEEE-754 binary64 multiplication, round to nearest even, same domain as f64_add (finite, no subnormal inputs, a normal or zero result; zero of either
+// sign allowed). The 106-bit product of the two 53-bit significands is built from 32-bit limbs in uint64_t (no 128-bit type, so the same text compiles as GLSL).
+// Every shift count is below 64. Mutants for the self-check: MUT(4) rounds half up, MUT(5) truncates, MUT(6) ignores the low 20 bits of the remainder
+// (a "dropped sticky bits" bug: ties and near-ties are misjudged).
+FN uint64_t f64_mul(uint64_t a, uint64_t b) {
+    const uint64_t kMant = 0x000FFFFFFFFFFFFFul, kHidden = 0x0010000000000000ul;
+    uint s = uint(a >> 63) ^ uint(b >> 63);
+    int ea = int((a >> 52) & 0x7FFul), eb = int((b >> 52) & 0x7FFul);
+    if (ea == 0 || eb == 0) return uint64_t(s) << 63;                  // a zero factor (subnormals are excluded)
+    uint64_t ma = (a & kMant) | kHidden, mb = (b & kMant) | kHidden;   // 53 bits each, in [2^52, 2^53)
+    uint64_t a0 = ma & 0xFFFFFFFFul, a1 = ma >> 32;                     // a1 < 2^21
+    uint64_t b0 = mb & 0xFFFFFFFFul, b1 = mb >> 32;
+    uint64_t p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
+    uint64_t mid = p01 + p10;                                           // < 2^54
+    uint64_t lo = p00 + ((mid & 0xFFFFFFFFul) << 32);
+    uint64_t hi = p11 + (mid >> 32) + (lo < p00 ? 1ul : 0ul);           // product = hi * 2^64 + lo, in [2^104, 2^106)
+    int sh = (hi >= 0x20000000000ul) ? 53 : 52;                         // 2^105 = 2^41 * 2^64: keep a 53-bit significand
+    uint64_t m = (hi << (64 - sh)) | (lo >> sh);
+    uint64_t rem = lo & ((1ul << sh) - 1ul);
+    if (MUT(6)) rem &= ~0xFFFFFul;
+    uint64_t halfway = 1ul << (sh - 1);
+    bool up = MUT(4) ? (rem >= halfway)
+            : MUT(5) ? false
+            : (rem > halfway || (rem == halfway && (m & 1ul) != 0ul));
+    if (up) m += 1ul;
+    int e = ea + eb - 1023 + (sh == 53 ? 1 : 0);
+    if ((m >> 53) != 0ul) { m >>= 1; e += 1; }
+    return (uint64_t(s) << 63) | (uint64_t(e) << 52) | (m & kMant);
+}
+FN uint64_t f64_abs(uint64_t a) { return a & 0x7FFFFFFFFFFFFFFFul; }
+FN uint64_t f64_neg(uint64_t a) { return a ^ 0x8000000000000000ul; }
+// a > b for finite, non-NaN operands (zeros of either sign are equal), by sign-magnitude comparison on the bit patterns
+FN bool f64_gt(uint64_t a, uint64_t b) {
+    uint64_t ma = a & 0x7FFFFFFFFFFFFFFFul, mb = b & 0x7FFFFFFFFFFFFFFFul;
+    if (ma == 0ul && mb == 0ul) return false;
+    bool na = (a >> 63) != 0ul, nb = (b >> 63) != 0ul;
+    if (na != nb) return !na;
+    return na ? (ma < mb) : (ma > mb);
+}
 
 // mongo::DoubleDoubleSummation::addDouble (src/mongo/util/summation.h), without the `_special` NaN tracker (the caller falls
 // back to the CPU for non-finite input). sum and addend are binary64 bit patterns.

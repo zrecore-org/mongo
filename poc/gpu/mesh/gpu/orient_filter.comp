@@ -1,0 +1,21 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+// MP09: Shewchuk orient3d stage-A filter in exact soft binary64, one thread per case. Input: 12 binary64 bit patterns per case (a, b, c, d; x y z);
+// output: 1, -1 or 0 (uncertain) as an int per case.
+#include "f64soft.inc"
+#include "orient_filter.inc"
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer In { uint64_t p[]; };
+layout(std430, binding = 1) writeonly buffer Out { uint64_t r[]; };   // per case: sign (as 0, 1, 2 = uncertain, +1, -1), determinant bits, bound bits
+layout(push_constant) uniform P { uint n; } pc;
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.n) return;
+    uint o = 12u * i;
+    uint64_t det, bound;
+    int s = orient3dFilterSoftEx(p[o], p[o+1u], p[o+2u], p[o+3u], p[o+4u], p[o+5u], p[o+6u], p[o+7u], p[o+8u], p[o+9u], p[o+10u], p[o+11u], det, bound);
+    r[3u * i] = uint64_t(s + 1);
+    r[3u * i + 1u] = det;
+    r[3u * i + 2u] = bound;
+}

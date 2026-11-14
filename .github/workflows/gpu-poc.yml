@@ -141,6 +141,14 @@ jobs:
           mesh/corpus/gen_corpus.sh --check
           mesh/corpus/gen_corpus.sh --selftest
 
+      - name: Mesh, MP09 orient3d filter in exact soft binary64 (host, then the device)
+        working-directory: poc/gpu
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          build/mesh/mp09_orient_filter host 800000
+          ./run.sh mesh/mp09_orient_filter device 400000
+
       - name: Select the lavapipe driver and show the device (informational)
         run: |
           ICD="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)"
@@ -247,7 +255,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: poc/gpu
+          sparse-checkout: |
+            poc/gpu
+            src/third_party/boost
           fetch-depth: 1
 
       - name: Install packages
@@ -272,6 +282,10 @@ jobs:
         run: |
           git clone --depth 1 --branch "$VULKAN_HEADERS_TAG" https://github.com/KhronosGroup/Vulkan-Headers "$RUNNER_TEMP/vkh"
           git clone --depth 1 --branch "$VOLK_TAG" https://github.com/zeux/volk "$RUNNER_TEMP/volk"
+
+      - name: Mesh, fetch the pinned Shewchuk predicates
+        working-directory: poc/gpu
+        run: mesh/oracle/fetch.sh
 
       - name: Build
         working-directory: poc/gpu
@@ -388,6 +402,14 @@ jobs:
           POC2_SOFT=1 ./run.sh poc2_sum accuracy
           POC2_SOFT=1 ./run.sh poc2_sum bench 1
           POC2_SOFT=1 ./run.sh poc2_sum bench 16
+
+      - name: "Mesh, MP09 orient3d filter on the GPU (informational)"
+        working-directory: poc/gpu
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          build/mesh/mp09_orient_filter host 800000
+          ./run.sh mesh/mp09_orient_filter device 2000000
 
       - name: "POC 2, $sum timing (G=1 and G=16) and accuracy"
         working-directory: poc/gpu

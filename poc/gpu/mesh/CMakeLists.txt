@@ -28,3 +28,17 @@ if(EXISTS ${MESH_BOOST}/libs/multiprecision/include)
     target_compile_options(${T} PRIVATE -ffp-contract=off)
   endforeach()
 endif()
+
+# MP09: GPU orient3d filter (shader + host program). The shader needs shaders/f64soft.inc and mesh/gpu/orient_filter.inc.
+if(GLSLC AND EXISTS ${MESH_BOOST}/libs/multiprecision/include)
+  set(MESH_SPV ${CMAKE_BINARY_DIR}/shaders/orient_filter.spv)
+  add_custom_command(OUTPUT ${MESH_SPV}
+    COMMAND ${GLSLC} --target-env=vulkan1.2 -O0 -I ${CMAKE_SOURCE_DIR}/shaders -I ${CMAKE_SOURCE_DIR}/mesh/gpu -o ${MESH_SPV} ${CMAKE_SOURCE_DIR}/mesh/gpu/orient_filter.comp
+    DEPENDS ${CMAKE_SOURCE_DIR}/mesh/gpu/orient_filter.comp ${CMAKE_SOURCE_DIR}/mesh/gpu/orient_filter.inc ${CMAKE_SOURCE_DIR}/shaders/f64soft.inc VERBATIM)
+  add_custom_target(mesh_shaders ALL DEPENDS ${MESH_SPV})
+  add_executable(mp09_orient_filter gpu/mp09_orient_filter.cpp)
+  target_include_directories(mp09_orient_filter PRIVATE ${MESH_BOOST} ${MESH_BOOST_INCS})
+  target_compile_options(mp09_orient_filter PRIVATE -ffp-contract=off)
+  target_link_libraries(mp09_orient_filter volk)
+  add_dependencies(mp09_orient_filter mesh_shaders)
+endif()

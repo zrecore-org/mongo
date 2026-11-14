@@ -53,6 +53,42 @@ static size_t checkPairs(const std::vector<std::pair<uint64_t, uint64_t>>& v, si
     return bad;
 }
 
+
+// Operand pairs for the multiply: significands with few bits (exact products and exact ties), all ones, just above 1 and just below 2 (carry into the next exponent),
+// random, with both signs and zeros of both signs; exponents chosen so that the product stays normal.
+static std::vector<std::pair<uint64_t, uint64_t>> makeMulPairs(size_t perCase, uint64_t seed) {
+    std::mt19937_64 rng(seed);
+    std::vector<std::pair<uint64_t, uint64_t>> v;
+    auto mk = [&](uint64_t s, int e, uint64_t m) { return (s << 63) | ((uint64_t)(e & 0x7FF) << 52) | (m & 0x000FFFFFFFFFFFFFull); };
+    auto ex = [&] { return 900 + (int)(rng() % 200); };             // biased exponent field near 1023: the product's biased exponent ea+eb-1023 stays in [777, 1177], always normal
+    auto few = [&] { uint64_t m = 0; int bits = 1 + (int)(rng() % 10); for (int i = 0; i < bits; i++) m |= 1ull << (rng() % 52); return m; };
+    for (size_t i = 0; i < perCase; i++) {
+        uint64_t sa = rng() & 1, sb = rng() & 1;
+        v.push_back({mk(sa, ex(), rng()), mk(sb, ex(), rng())});                                   // random
+        v.push_back({mk(sa, ex(), few()), mk(sb, ex(), few())});                                   // few bits: exact products, many ties
+        v.push_back({mk(sa, ex(), 0xFFFFFFFFFFFFFull), mk(sb, ex(), 0xFFFFFFFFFFFFFull)});         // all ones x all ones
+        v.push_back({mk(sa, ex(), 0xFFFFFFFFFFFFFull), mk(sb, ex(), rng())});
+        v.push_back({mk(sa, ex(), rng() & 0xFFull), mk(sb, ex(), rng() & 0xFFull)});               // just above 1
+        v.push_back({mk(sa, ex(), 0x8000000000000ull | few()), mk(sb, ex(), 0x8000000000000ull | few())});   // near 1.5: product near 2.25, carry
+        v.push_back({mk(sa, ex(), 0xFFFFFFFFFFFFFull - (rng() & 0xFF)), mk(sb, ex(), 0xFFFFFFFFFFFFFull - (rng() & 0xFF))});   // just below 2
+        // ties: (1 + 2^-k)^2 = 1 + 2^(1-k) + 2^(-2k), exactly representable only for small k; the half-way case needs a 54-bit product with the last bit set
+        int k = 20 + (int)(rng() % 7); uint64_t m = 1ull << (52 - k);
+        v.push_back({mk(sa, ex(), m), mk(sb, ex(), m)});
+        v.push_back({mk(sa, ex(), m | 1ull), mk(sb, ex(), m | 1ull)});
+        v.push_back({mk(sa, ex(), 0), mk(sb, ex(), rng())});                                       // power of two times anything
+    }
+    for (int sa = 0; sa < 2; sa++) for (int sb = 0; sb < 2; sb++) { v.push_back({(uint64_t)sa << 63, mk(sb, 1023, 12345)}); v.push_back({mk(sb, 1023, 12345), (uint64_t)sa << 63}); v.push_back({(uint64_t)sa << 63, (uint64_t)sb << 63}); }
+    return v;
+}
+static size_t checkMulPairs(const std::vector<std::pair<uint64_t, uint64_t>>& v, size_t* firstBad = nullptr) {
+    size_t bad = 0;
+    for (size_t i = 0; i < v.size(); i++) {
+        double h = dbl(v[i].first) * dbl(v[i].second);
+        if (f64_mul(v[i].first, v[i].second) != bits(h)) { if (!bad && firstBad) *firstBad = i; bad++; }
+    }
+    return bad;
+}
+
 // DoubleDoubleSummation sequences: the integer implementation against the hardware-double one used by POC 2.
 struct DDh { double sum = 0, addend = 0;
     void add(double x) { { double s = x + addend, z = s - x, t = addend - z; x = s; addend = t; }
@@ -79,6 +115,21 @@ static int host() {
     size_t dbad = checkDds(200, 20000);
     printf("host: DoubleDoubleSummation, integer vs hardware, 200 sequences x 20000 values (sum AND addend bit for bit): %s (%zu differ)\n", dbad ? "FAIL" : "PASS", dbad);
     int rc = bad || dbad;
+    auto mpairs = makeMulPairs(120000, 21);
+    size_t mfb = 0, mbad = checkMulPairs(mpairs, &mfb);
+    printf("host: f64_mul vs hardware double on %zu pairs: %s (%zu differ)\n", mpairs.size(), mbad ? "FAIL" : "PASS", mbad);
+    if (mbad) printf("  first mismatch: %016llx * %016llx -> %016llx, expected %016llx\n", (unsigned long long)mpairs[mfb].first, (unsigned long long)mpairs[mfb].second,
+                     (unsigned long long)f64_mul(mpairs[mfb].first, mpairs[mfb].second), (unsigned long long)bits(dbl(mpairs[mfb].first) * dbl(mpairs[mfb].second)));
+    rc |= mbad != 0;
+    {
+        auto fewm = makeMulPairs(60000, 33);
+        const char* mn[] = {"", "", "", "", "round half up", "truncate", "remainder low 20 bits ignored"};
+        for (int m = 4; m <= 6; m++) {
+            g_mut = m; size_t mb = checkMulPairs(fewm); g_mut = 0;
+            printf("  mutant %d (multiply: %s): %s (%zu of %zu pairs differ)\n", m, mn[m], mb ? "caught" : "NOT CAUGHT", mb, fewm.size());
+            rc |= mb == 0;
+        }
+    }
     auto few = makePairs(2000, 9);
     const char* names[] = {"", "drop the sticky bit", "round half up", "ties always down"};
     for (int m = 1; m <= 3; m++) {
@@ -92,23 +143,30 @@ static int host() {
 static int device() {
     gpu::Ctx ctx;
     if (!ctx.init(gpu::defaultLoaderPaths())) { printf("no GPU: %s\n", ctx.error.c_str()); return 2; }
-    auto pairs = makePairs(8000, 3);
-    const uint32_t n = (uint32_t)pairs.size();
-    printf("device=%s memory=%s pairs=%u\n", ctx.props.deviceName, ctx.memMode(), n);
-    auto k = ctx.makeKernel("build/shaders/softadd_probe.spv", 2, 4);
-    auto A = ctx.alloc((size_t)n * 16), R = ctx.alloc((size_t)n * 8);
-    memcpy(A.ptr, pairs.data(), (size_t)n * 16);
-    ctx.begin(); ctx.upload(A); ctx.dispatch(k, {&A, &R}, &n, (n + 63) / 64); ctx.download(R); ctx.submitWait();
-    size_t bad = 0, first = 0;
-    for (uint32_t i = 0; i < n; i++) {
-        uint64_t want = bits(dbl(pairs[i].first) + dbl(pairs[i].second));
-        if (((uint64_t*)R.ptr)[i] != want) { if (!bad) first = i; bad++; }
+    auto addPairs = makePairs(8000, 3);
+    auto mulPairs = makeMulPairs(20000, 4);
+    printf("device=%s memory=%s add pairs=%zu mul pairs=%zu\n", ctx.props.deviceName, ctx.memMode(), addPairs.size(), mulPairs.size());
+    auto k = ctx.makeKernel("build/shaders/softadd_probe.spv", 2, 8);
+    int rc = 0;
+    for (int op = 0; op < 2; op++) {
+        const auto& pairs = op == 0 ? addPairs : mulPairs;
+        const uint32_t n = (uint32_t)pairs.size();
+        auto A = ctx.alloc((size_t)n * 16), R = ctx.alloc((size_t)n * 8);
+        memcpy(A.ptr, pairs.data(), (size_t)n * 16);
+        uint32_t pc[2] = {n, (uint32_t)op};
+        ctx.begin(); ctx.upload(A); ctx.dispatch(k, {&A, &R}, pc, (n + 63) / 64); ctx.download(R); ctx.submitWait();
+        size_t bad = 0, first = 0;
+        for (uint32_t i = 0; i < n; i++) {
+            uint64_t want = op == 0 ? bits(dbl(pairs[i].first) + dbl(pairs[i].second)) : bits(dbl(pairs[i].first) * dbl(pairs[i].second));
+            if (((uint64_t*)R.ptr)[i] != want) { if (!bad) first = i; bad++; }
+        }
+        printf("device: f64_%s vs hardware double: %s (%zu of %u differ)\n", op == 0 ? "add" : "mul", bad ? "FAIL" : "PASS", bad, n);
+        if (bad) { printf("  first: %016llx %c %016llx -> %016llx, expected %016llx\n", (unsigned long long)pairs[first].first, op == 0 ? '+' : '*', (unsigned long long)pairs[first].second,
+                          (unsigned long long)((uint64_t*)R.ptr)[first], (unsigned long long)(op == 0 ? bits(dbl(pairs[first].first) + dbl(pairs[first].second)) : bits(dbl(pairs[first].first) * dbl(pairs[first].second)))); rc = 3; }
+        ctx.release(A); ctx.release(R);
     }
-    printf("device: f64_add vs hardware double: %s (%zu of %u differ)\n", bad ? "FAIL" : "PASS", bad, n);
-    if (bad) printf("  first: %016llx + %016llx -> %016llx, expected %016llx\n", (unsigned long long)pairs[first].first, (unsigned long long)pairs[first].second,
-                    (unsigned long long)((uint64_t*)R.ptr)[first], (unsigned long long)bits(dbl(pairs[first].first) + dbl(pairs[first].second)));
-    ctx.release(A); ctx.release(R); ctx.release(k); ctx.destroy();
-    return bad ? 3 : 0;
+    ctx.release(k); ctx.destroy();
+    return rc;
 }
 
 int main(int argc, char** argv) {
