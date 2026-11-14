@@ -7,14 +7,16 @@ layout(std430, binding = 1) readonly buffer I { uint sortedIdx[]; };            
 layout(std430, binding = 2) readonly buffer L { uint lc[]; };
 layout(std430, binding = 3) readonly buffer R { uint rc[]; };
 layout(std430, binding = 4) readonly buffer PA { uint parent[]; };
-layout(std430, binding = 5) coherent buffer NB { float nb[]; };                  // 6 floats per node (2n-1 nodes)
+layout(std430, binding = 5) coherent buffer NB { uint nb[]; };                   // 6 floats per node (2n-1 nodes), accessed ONLY through atomics (bit patterns)
 layout(std430, binding = 6) coherent buffer FL { uint flag[]; };                 // one counter per internal node, zeroed by the host
 layout(push_constant) uniform P { uint n; } pc;
+float ld(uint i) { return uintBitsToFloat(atomicAdd(nb[i], 0u)); }          // atomic read: coherent on every device
+void st(uint i, float v) { atomicExchange(nb[i], floatBitsToUint(v)); }
 void main() {
     uint k = gl_GlobalInvocationID.x;
     if (k >= pc.n) return;
     uint node = pc.n - 1u + k, src = sortedIdx[k];
-    for (uint c = 0u; c < 6u; c++) nb[6u * node + c] = box[6u * src + c];
+    for (uint c = 0u; c < 6u; c++) st(6u * node + c, box[6u * src + c]);
     if (pc.n == 1u) return;
     while (node != 0u) {
         uint p = parent[node];
@@ -22,7 +24,7 @@ void main() {
         if (atomicAdd(flag[p], 1u) == 0u) return;       // first arrival: the sibling subtree is not finished
         memoryBarrierBuffer();
         uint a = lc[p], b = rc[p];
-        for (uint c = 0u; c < 3u; c++) { nb[6u * p + c] = min(nb[6u * a + c], nb[6u * b + c]); nb[6u * p + 3u + c] = max(nb[6u * a + 3u + c], nb[6u * b + 3u + c]); }
+        for (uint c = 0u; c < 3u; c++) { st(6u * p + c, min(ld(6u * a + c), ld(6u * b + c))); st(6u * p + 3u + c, max(ld(6u * a + 3u + c), ld(6u * b + 3u + c))); }
         memoryBarrierBuffer();
         node = p;
     }
