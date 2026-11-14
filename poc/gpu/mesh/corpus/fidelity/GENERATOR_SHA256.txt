@@ -1,0 +1,2 @@
+fae52ace975093ded8e68b2a08c27129eac73761e2886df877f9f18c0c9068e7  gen_fidelity.cpp
+66736f2b5e70a344df2bbbaf97251160ba4a3e1e76bfd0ad9fd6c1b59d8fb31c  build_gen_fidelity.sh

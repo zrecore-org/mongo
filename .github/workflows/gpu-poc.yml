@@ -476,6 +476,79 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  # MP24 (poc/gpu/mesh/PLAN.md section MP24): the assembled high-fidelity boolean pipeline geogram_fidelity (exact validation, exact re-centring, Geogram with the MP20 and
+  # MP22 patches, translate back) built on top of the MP22b chain and scored on the G1 corpus (93 rows), the MP24 offset and thin families, touch set 3 and set 5. Same matrix
+  # as MP22b. The pipeline sources are frozen (lib/geogram/mp24/FROZEN_SHA256.txt, checked before the build); every generator output (G1, set 3, set 5, offset, thin) is verified
+  # against its recorded sha256 list before anything is scored. Prints per-family tables, the translate-back error, refusals by reason, the per-bar lines and
+  # "MP24: bars 1-5 on this platform: MET/NOT MET", and the aggregate sha256 of all outputs and of the verdict list (bar 6: compare the two Linux artifacts afterwards).
+  # Informational (continue-on-error): read the bar line, not the check mark.
+  mesh-mp24-geogram:
+    name: Mesh MP24, geogram_fidelity pipeline ${{ matrix.arch }} (informational)
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 60
+    env:
+      WORK: /home/runner/mp24_work
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            poc/gpu
+            src/third_party/boost
+          fetch-depth: 1
+
+      - name: Install packages
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ ninja-build make patch curl python3 zlib1g-dev
+
+      - name: Fetch the pinned Shewchuk predicates (scoring oracle)
+        run: poc/gpu/mesh/oracle/fetch.sh
+
+      - name: Fetch Geogram v1.10.1 and verify the pinned tarball sha256
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh fetch
+
+      - name: Build Geogram (unpatched, MP20, MP22; frozen patch hashes checked), the MP22 state is what geogram_fidelity links
+        timeout-minutes: 20
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh build-chain
+
+      - name: Build geogram_fidelity (sources checked against mp24/FROZEN_SHA256.txt)
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh build-fidelity
+
+      - name: Build the scoring oracle and the corpus generators
+        timeout-minutes: 10
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh tools24
+
+      - name: Generate G1, set 3, set 5 and the MP24 families, verify every file against the recorded hashes
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh corpus24
+
+      - name: Score geogram_fidelity on G1, offset, thin, set 3 and set 5 (GEOGRAM_RUNNER_THREADS=1)
+        timeout-minutes: 30
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh score24
+
+      - name: Verdict tables, per-bar lines, MP24 bar line and output hashes
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh report24
+
+      - name: Upload TSVs, hashes and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp24-geogram-${{ matrix.arch }}
+          path: |
+            ${{ env.WORK }}/report24/
+            ${{ env.WORK }}/score24/*.tsv
+            ${{ env.WORK }}/score24/log_*.log
+            ${{ env.WORK }}/*.log
+          if-no-files-found: warn
+          retention-days: 30
+
   nvidia-t4:
     name: NVIDIA Tesla T4 (hosted GPU runner, billed)
     needs: linux-lavapipe

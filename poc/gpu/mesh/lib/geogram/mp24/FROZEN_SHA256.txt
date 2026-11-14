@@ -1,0 +1,9 @@
+FROZEN 2026-11-14T17:19:09Z before gen_fidelity.cpp exists and before any MP24 family (G1, offset, thin, touch 3/5) was run through geogram_fidelity; mutants are the -DMUT_* variants of the same source
+3ff8f644da8b9ac31bdd09553f365421ac09d19aba3fd4d09a27bafb14ff801a  poc/gpu/mesh/lib/geogram/mp24/geogram_fidelity.cpp
+3475b1f29e7993ea271ea4da1fe4f3f70297f7e510424a49f9b569fb6f51ba86  poc/gpu/mesh/lib/geogram/mp24/build.sh
+5caad2aad43130a4d50d6ac037667ab5d2d423b3b0d2babd8b6d36b56fe06745  poc/gpu/mesh/lib/geogram/runner.cpp
+4725b677e8b879e23f0cc1e63176a3675f4bbd7d91d68163e19ea4f952b72d04  poc/gpu/mesh/lib/geogram/mp21b/validator.h
+63d3abf427c700e678afb4c5eacbbfef15810c5cf68bc4d17c834876af66ee27  poc/gpu/mesh/harness/exact.h
+8bd413a78f4b8ff1738ecc0ebb4053a3805f3ddebbfe3e860e62c1d096ab71ec  poc/gpu/mesh/harness/mesh_io.h
+4074ad1ff1314179335d1a2d89225496dfa4ff23a0ac4c6564454592757e92e4  poc/gpu/mesh/lib/geogram/mp20/geogram_mp20.patch
+d2efc1247349fead17816421a906cd1bb26cf1b5e0befd23cdd1ae17d9439c27  poc/gpu/mesh/lib/geogram/mp22/geogram_mp22.patch

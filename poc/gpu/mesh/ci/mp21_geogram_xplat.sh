@@ -5,6 +5,7 @@
 # Runs the same way on the M1 (WORK defaults to storage/mesh/mp21/work on the external volume) and on ubuntu-24.04 x86_64/aarch64
 # (CI sets WORK). Needs: curl, tar, patch, cmake, ninja or make, g++/c++, python3, and poc/gpu/build/third_party/shewchuk/predicates.c
 # (oracle/fetch.sh) plus the vendored Boost headers (src/third_party/boost).
+# MP24 stages (assembled fidelity pipeline, geogram_fidelity on G1, offset, thin, touch sets 3 and 5): build-fidelity | tools24 | corpus24 | score24 | report24 | mp24 (everything; build-chain first)
 # Hard failures (exit 1): tarball sha256 differs from the pin, patch/patched-file hash differs from FROZEN_SHA256.txt, a restricted
 # component is compiled, a generated corpus file differs from its EXPECTED_SHA256 file. Verdicts themselves never fail the script.
 set -euo pipefail
@@ -158,7 +159,7 @@ stage_corpus() {
 }
 
 shard_score() {  # name runner corpus [ids-file]   -> $WORK/score/<name>.tsv (merged), shards in $WORK/score/<name>_<k>
-  local NAME="$1" RUN="$2" C="$3" IDS="${4:-}" S="$WORK/score"; mkdir -p "$S"
+  local NAME="$1" RUN="$2" C="$3" IDS="${4:-}" S="${SCORE_DIR:-$WORK/score}"; mkdir -p "$S"
   export GEOGRAM_RUNNER_THREADS=1   # as MP18/MP20 run_shards.sh
   if [ -n "$IDS" ]; then cp "$IDS" "$S/ids_$NAME.all"; else tail -n +2 "$C/manifest.tsv" | cut -f1 > "$S/ids_$NAME.all"; fi
   python3 -I - "$S" "$NAME" "$JOBS" <<'PY'
@@ -169,7 +170,7 @@ PY
   local pids=() k p
   for ((k=0; k<JOBS; k++)); do
     [ -s "$S/ids_${NAME}_$k.txt" ] || continue
-    ( python3 "$MESH/oracle/score_library.py" "${NAME}_$k" "$RUN" "$C" --points 5000 --cases "$(cat "$S/ids_${NAME}_$k.txt")" --outdir "$S/${NAME}_$k" > "$S/log_${NAME}_$k.log" 2>&1 ) &
+    ( python3 "${SCORER:-$MESH/oracle/score_library.py}" "${NAME}_$k" "$RUN" "$C" --points 5000 --cases "$(cat "$S/ids_${NAME}_$k.txt")" --outdir "$S/${NAME}_$k" > "$S/log_${NAME}_$k.log" 2>&1 ) &
     pids+=($!)
   done
   local bad=0; for p in "${pids[@]}"; do wait "$p" || bad=1; done
@@ -262,6 +263,63 @@ stage_report5() {
   python3 -I "$HERE/mp22b_report.py" "$WORK" "$(arch_tag)" "$(( $(wc -l < "$WORK/set5_corpus/manifest.tsv") - 1 ))"
 }
 
+# ---------------------------------------------------------------- MP24 ----------------------------------------------------------------
+# geogram_fidelity = exact validation + exact re-centring + MP22-patched Geogram + translate back, one process (lib/geogram/mp24). Built against the MP22-state tree
+# $WORK/geo_chain left by build-chain. Scored with lib/geogram/mp24/score_fidelity.py (oracle/score_library.py plus a `fidelity` column), GEOGRAM_RUNNER_THREADS=1.
+FROZEN24="$MESH/lib/geogram/mp24/FROZEN_SHA256.txt"
+FID_DIR="$MESH/corpus/fidelity"
+FID="${FID_BIN:-$WORK/geo_chain/bin/geogram_fidelity}"        # FID_BIN: a planted mutant (lib/geogram/mp24/run_mutants.sh)
+SCORE24_DIR="${SCORE24_DIR:-$WORK/score24}"
+FAMS24="${FAMS24:-g1:g1_corpus off:fid_corpus/offset thin:fid_corpus/thin set3:set3_corpus set5:set5_corpus}"
+stage_build_fidelity() {
+  say "build geogram_fidelity (sources checked against mp24/FROZEN_SHA256.txt)"
+  [ -f "$WORK/geo_chain/build/lib/libgeogram.a" ] || die "no $WORK/geo_chain (build-chain stage not run)"
+  ( cd "$ROOT" && grep -v '^FROZEN' "$FROZEN24" > "$WORK/frozen24.sums" && shacheck "$WORK/frozen24.sums" ) || die "a geogram_fidelity source or a frozen input differs from mp24/FROZEN_SHA256.txt"
+  GEOGRAM_DIR="$WORK/geo_chain" OUTDIR="$WORK/geo_chain/bin" sh "$MESH/lib/geogram/mp24/build.sh"
+  echo "geogram_fidelity sha256 $(sha "$FID")"
+}
+stage_tools24() {
+  say "build oracle tools plus gen_corpus, gen_touch_set3 and gen_fidelity"
+  stage_tools
+  local B="$ROOT/src/third_party/boost"; local INC=(); for d in "$B"/libs/*/include; do INC+=("-I$d"); done
+  ${CXX:-c++} -std=c++17 -O2 -ffp-contract=off -I"$B" "${INC[@]}" "$MESH/corpus/gen_corpus.cpp" -o "$WORK/bin/gen_corpus"
+  ${CXX:-c++} -std=c++17 -O2 -ffp-contract=off -I"$B" "${INC[@]}" "$MESH/corpus/touch/gen_touch_set3.cpp" "$WORK/libshewchuk_predicates.a" -o "$WORK/bin/gen_touch_set3"
+  ${CXX:-c++} -std=c++17 -O2 -ffp-contract=off -I"$B" "${INC[@]}" "$FID_DIR/gen_fidelity.cpp" -o "$WORK/bin/gen_fidelity"
+}
+stage_corpus24() {
+  say "generate G1, touch set 3, touch set 5 and the MP24 families; verify generator sources and every file against the hashes recorded before the runs"
+  [ -x "$WORK/bin/gen_fidelity" ] || stage_tools24
+  local want; want="$(awk '/gen_fidelity.cpp/{print $1}' "$FID_DIR/GENERATOR_SHA256.txt")"; [ -n "$want" ] || die "no generator hash in corpus/fidelity/GENERATOR_SHA256.txt"
+  [ "$(sha "$FID_DIR/gen_fidelity.cpp")" = "$want" ] || die "gen_fidelity.cpp differs from the hash recorded before the run"
+  rm -rf "${WORK:?}/g1_corpus"; "$WORK/bin/gen_corpus" "$WORK/g1_corpus" --many 200 > "$WORK/g1_corpus.gen.log" 2>&1 || die "gen_corpus failed"
+  if ( cd "$WORK/g1_corpus" && shacheck "$MESH/corpus/EXPECTED_SHA256.txt" > "$WORK/g1_corpus.verify.log" 2>&1 ); then echo "g1_corpus: all files match corpus/EXPECTED_SHA256.txt"
+  else grep -v ': OK$' "$WORK/g1_corpus.verify.log" | head; die "G1 corpus differs from corpus/EXPECTED_SHA256.txt on this platform"; fi
+  rm -rf "${WORK:?}/set3_corpus"; "$WORK/bin/gen_touch_set3" "$WORK/set3_corpus" > "$WORK/set3_corpus.gen.log" 2>&1 || { tail -5 "$WORK/set3_corpus.gen.log"; die "gen_touch_set3 failed"; }
+  if ( cd "$WORK/set3_corpus" && shacheck "$MESH/corpus/touch/EXPECTED_SHA256_set3.txt" > "$WORK/set3_corpus.verify.log" 2>&1 ); then echo "set3_corpus: all files match EXPECTED_SHA256_set3.txt"
+  else grep -v ': OK$' "$WORK/set3_corpus.verify.log" | head; die "set 3 differs from EXPECTED_SHA256_set3.txt on this platform"; fi
+  stage_corpus5
+  rm -rf "${WORK:?}/fid_corpus"; "$WORK/bin/gen_fidelity" "$WORK/fid_corpus" > "$WORK/fid_corpus.gen.log" 2>&1 || die "gen_fidelity failed"; cat "$WORK/fid_corpus.gen.log"
+  if ( cd "$WORK/fid_corpus" && shacheck "$FID_DIR/EXPECTED_SHA256.txt" > "$WORK/fid_corpus.verify.log" 2>&1 ) && [ "$(find "$WORK/fid_corpus" -type f | wc -l | tr -d ' ')" = "$(wc -l < "$FID_DIR/EXPECTED_SHA256.txt" | tr -d ' ')" ]; then
+    echo "fid_corpus: all $(wc -l < "$FID_DIR/EXPECTED_SHA256.txt") files match corpus/fidelity/EXPECTED_SHA256.txt"
+  else grep -v ': OK$' "$WORK/fid_corpus.verify.log" | head; die "MP24 families differ from corpus/fidelity/EXPECTED_SHA256.txt on this platform (different generator output); results would not be comparable. Stopping."; fi
+}
+stage_score24() {
+  [ -x "$FID" ] || die "missing $FID (build-fidelity stage not run)"
+  [ -d "$WORK/fid_corpus/offset" ] || stage_corpus24
+  export SCORER="$MESH/lib/geogram/mp24/score_fidelity.py"
+  rm -rf "${SCORE24_DIR:?}"; mkdir -p "$SCORE24_DIR"
+  export SCORE_DIR="$SCORE24_DIR"
+  local pair n c
+  for pair in $FAMS24; do
+    n="${pair%%:*}"; c="$WORK/${pair#*:}"; say "score geogram_fidelity: $n"
+    shard_score "$n" "$FID" "$c"
+  done
+}
+stage_report24() {
+  say "report (MP24)"
+  python3 -I "$HERE/mp24_report.py" "$WORK" "$(arch_tag)"
+}
+
 case "${1:-all}" in
   fetch) stage_fetch ;;
   build-unpatched) build_geogram unpatched ;;
@@ -274,6 +332,12 @@ case "${1:-all}" in
   corpus5) stage_corpus5 ;;
   score5) stage_score5 ;;
   report5) stage_report5 ;;
+  build-fidelity) stage_build_fidelity ;;
+  tools24) stage_tools24 ;;
+  corpus24) stage_corpus24 ;;
+  score24) stage_score24 ;;
+  report24) stage_report24 ;;
+  mp24) stage_fetch; stage_build_chain; stage_build_fidelity; stage_tools24; stage_corpus24; stage_score24; stage_report24 ;;
   mp22b) stage_fetch; stage_build_chain; stage_tools; stage_corpus5; stage_score5; stage_report5 ;;
   all) stage_fetch; build_geogram unpatched; build_geogram patched; stage_tools; stage_corpus; stage_score; stage_report ;;
   *) die "unknown stage $1" ;;
