@@ -1,0 +1,44 @@
+#version 450
+#include "lbvh_common.glsl"
+// MP10 step 5: each query box (set A) walks the BVH over set B with an explicit stack. mode 0 counts hits per query; mode 1 writes (query, B index) at the
+// query's offset. Both passes visit identically, so the counts are exact. A stack overflow sets err[0] (cannot happen below depth 96).
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer QB { float qbox[]; };
+layout(std430, binding = 1) readonly buffer NB { float nb[]; };
+layout(std430, binding = 2) readonly buffer L { uint lc[]; };
+layout(std430, binding = 3) readonly buffer R { uint rc[]; };
+layout(std430, binding = 4) readonly buffer I { uint sortedIdx[]; };
+layout(std430, binding = 5) buffer CNT { uint cnt[]; };      // mode 0: out counts; mode 1: in exclusive offsets
+layout(std430, binding = 6) writeonly buffer OUT { uvec2 outp[]; };
+layout(std430, binding = 7) buffer ERR { uint err[]; };      // [0] stack overflow, [1] pair cap exceeded
+layout(push_constant) uniform P { uint nq; uint n; uint mode; uint cap; } pc;
+void main() {
+    uint q = gl_GlobalInvocationID.x;
+    if (q >= pc.nq) return;
+    vec3 qlo = vec3(qbox[6u*q], qbox[6u*q+1u], qbox[6u*q+2u]), qhi = vec3(qbox[6u*q+3u], qbox[6u*q+4u], qbox[6u*q+5u]);
+    uint count = 0u, base = pc.mode == 1u ? cnt[q] : 0u;
+    uint stack[96]; int sp = 0;
+    uint node = 0u;
+    if (pc.n == 1u) node = 0u;       // single leaf: node id n-1+0 = 0
+    stack[sp++] = node;
+    while (sp > 0) {
+        node = stack[--sp];
+        vec3 lo = vec3(nb[6u*node], nb[6u*node+1u], nb[6u*node+2u]), hi = vec3(nb[6u*node+3u], nb[6u*node+4u], nb[6u*node+5u]);
+        if (!boxOverlap(qlo, qhi, lo, hi)) continue;
+        if (node >= pc.n - 1u) {
+            uint orig = sortedIdx[node - (pc.n - 1u)];
+            if (pc.mode == 1u) { uint pos = base + count; if (pos < pc.cap) outp[pos] = uvec2(q, orig); else err[1] = 1u; }
+            count++;
+        } else {
+            uint a = lc[node], b = rc[node];
+            if (sp + 2 > 96) { err[0] = 1u; break; }
+#if MUT == 3
+            stack[sp++] = a;
+            { vec3 alo = vec3(nb[6u*a], nb[6u*a+1u], nb[6u*a+2u]), ahi = vec3(nb[6u*a+3u], nb[6u*a+4u], nb[6u*a+5u]); if (boxOverlap(qlo, qhi, alo, ahi)) stack[sp++] = b; }
+#else
+            stack[sp++] = a; stack[sp++] = b;
+#endif
+        }
+    }
+    if (pc.mode == 0u) cnt[q] = count;
+}

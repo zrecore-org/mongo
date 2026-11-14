@@ -1,0 +1,37 @@
+#version 450
+#include "lbvh_common.glsl"
+// MP10 step 3: Karras (2012) parallel binary radix tree over the Morton-sorted keys. Equal codes are separated by the position index.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer K { uvec2 key[]; };      // sorted keys (x = code)
+layout(std430, binding = 1) writeonly buffer L { uint lc[]; };       // left child node id of internal node i
+layout(std430, binding = 2) writeonly buffer R { uint rc[]; };
+layout(std430, binding = 3) writeonly buffer PA { uint parent[]; };  // parent of every node (size 2n-1)
+layout(push_constant) uniform P { int n; } pc;
+int delta(int i, int j) {
+    if (j < 0 || j >= pc.n) return -1;
+    uint a = key[i].x, b = key[j].x;
+    if (a != b) return 31 - findMSB(a ^ b);
+#if MUT == 2
+    return 32;
+#else
+    return 32 + 31 - findMSB(uint(i) ^ uint(j));
+#endif
+}
+void main() {
+    int i = int(gl_GlobalInvocationID.x);
+    if (i >= pc.n - 1) return;
+    int d = (delta(i, i + 1) - delta(i, i - 1)) >= 0 ? 1 : -1;
+    int dmin = delta(i, i - d);
+    int lmax = 2;
+    while (delta(i, i + lmax * d) > dmin) lmax *= 2;
+    int l = 0;
+    for (int t = lmax / 2; t >= 1; t /= 2) if (delta(i, i + (l + t) * d) > dmin) l += t;
+    int j = i + l * d;
+    int dnode = delta(i, j);
+    int s = 0;
+    for (int t = (l + 1) / 2; ; t = (t + 1) / 2) { if (delta(i, i + (s + t) * d) > dnode) s += t; if (t == 1) break; }
+    int gamma = i + s * d + min(d, 0);
+    uint left  = (min(i, j) == gamma)     ? uint(pc.n - 1 + gamma)     : uint(gamma);
+    uint right = (max(i, j) == gamma + 1) ? uint(pc.n - 1 + gamma + 1) : uint(gamma + 1);
+    lc[i] = left; rc[i] = right; parent[left] = uint(i); parent[right] = uint(i);
+}

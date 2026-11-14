@@ -1,0 +1,16 @@
+#version 450
+// MP10 step 1: 30-bit Morton code (10 bits per axis) of each box centre, key = (code, 0) for the existing radix sort kernels.
+// The code only shapes the tree; the final pair set does not depend on it.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer BX { float box[]; };
+layout(std430, binding = 1) writeonly buffer KO { uvec2 key[]; };
+layout(push_constant) uniform P { uint n; float ox, oy, oz; float scale; } pc;
+uint expand(uint v) { v = (v * 0x00010001u) & 0xFF0000FFu; v = (v * 0x00000101u) & 0x0F00F00Fu; v = (v * 0x00000011u) & 0xC30C30C3u; v = (v * 0x00000005u) & 0x49249249u; return v; }
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.n) return;
+    vec3 lo = vec3(box[6u*i], box[6u*i+1u], box[6u*i+2u]), hi = vec3(box[6u*i+3u], box[6u*i+4u], box[6u*i+5u]);
+    vec3 c = (lo + hi) * 0.5 - vec3(pc.ox, pc.oy, pc.oz);
+    uvec3 q = uvec3(clamp(c * pc.scale, vec3(0.0), vec3(1023.0)));
+    key[i] = uvec2((expand(q.x) << 2) | (expand(q.y) << 1) | expand(q.z), 0u);
+}
