@@ -1,6 +1,7 @@
 #!/bin/bash
 # MP21a: cross-platform check of the MP20 Geogram patch (informational, never gating). See poc/gpu/mesh/PLAN.md section MP21.
 # usage: mp21_geogram_xplat.sh <stage>     stages: fetch | build-unpatched | build-patched | tools | corpus | score | report | all
+# MP22b stages (set 5, three builds: unpatched, MP20 patch, MP20+MP22 patches): build-chain | corpus5 | score5 | report5   (see PLAN.md section MP22 / MP22b)
 # Runs the same way on the M1 (WORK defaults to storage/mesh/mp21/work on the external volume) and on ubuntu-24.04 x86_64/aarch64
 # (CI sets WORK). Needs: curl, tar, patch, cmake, ninja or make, g++/c++, python3, and poc/gpu/build/third_party/shewchuk/predicates.c
 # (oracle/fetch.sh) plus the vendored Boost headers (src/third_party/boost).
@@ -26,6 +27,9 @@ libMeshb|LoicMarechal/libMeshb|88095d5ed04bfaf6bee27b777e7190bebdc72230|17946a0c
 rply|diegonehab/rply|4296cc91b5c8c26d4e7d7aac0cee2b194ffc5800|c8b8350352c4935a5ec3cc582082b75e84e5415615c8adadc3acddbf43877409"
 FROZEN="$MESH/lib/geogram/mp20/FROZEN_SHA256.txt"
 PATCH="$MESH/lib/geogram/mp20/geogram_mp20.patch"
+FROZEN22="$MESH/lib/geogram/mp22/FROZEN_SHA256.txt"
+PATCH22="$MESH/lib/geogram/mp22/geogram_mp22.patch"
+SET5_HASHES="$MESH/lib/geogram/mp22b/SET5_HASHES_BEFORE_RUN.txt"
 PRISTINE_CPP_SHA256=facff4cf02990f94432b8ba92725977cce8475bd9013bfa85cf778a3f3c9eb24   # pristine v1.10.1 mesh_surface_intersection.cpp (FROZEN_SHA256.txt)
 
 say() { echo; echo "=== $* ($(date -u +%H:%M:%S))"; }
@@ -87,6 +91,13 @@ build_geogram() {  # name(unpatched|patched)
   else
     [ "$(sha "$D/src/$CPP")" = "$PRISTINE_CPP_SHA256" ] || die "pristine mesh_surface_intersection.cpp differs from the recorded v1.10.1 hash"
   fi
+  cmake_build "$D" "$N"
+  GEOGRAM_DIR="$D" sh "$MESH/lib/geogram/build.sh"
+  echo "runner sha256 $(sha "$D/bin/geogram_runner")"
+}
+
+cmake_build() {  # dir name   configure + build libgeogram.a, check the restricted components were not compiled
+  local D="$1" N="$2"
   local GEN=(); if command -v ninja >/dev/null; then GEN=(-G Ninja); else GEN=(-G "Unix Makefiles"); fi
   # Same options as lib/geogram/REPORT.md section 1; static library; no GUI; flags repeated explicitly (the platform file also sets them).
   cmake -S "$D/src" -B "$D/build" "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
@@ -106,8 +117,6 @@ c = json.load(open(sys.argv[1])); bad = [e["file"] for e in c if re.search(r"thi
 print(f"compiled translation units: {len(c)} (MP20 recorded 147 on macOS); restricted: {len(bad)}")
 sys.exit(1 if bad else 0)
 PY
-  GEOGRAM_DIR="$D" sh "$MESH/lib/geogram/build.sh"
-  echo "runner sha256 $(sha "$D/bin/geogram_runner")"
 }
 
 build_predicates() {
@@ -127,7 +136,7 @@ stage_tools() {
   if [ ! -x "$OUT/mesh_compare" ]; then   # on the M1 this already exists from the CMake build; CI has no Vulkan SDK, so build it directly
     ${CXX:-c++} -std=c++17 -O3 -DNDEBUG -ffp-contract=off -I"$B" "${INC[@]}" "$MESH/oracle/compare.cpp" "$WORK/libshewchuk_predicates.a" -o "$OUT/mesh_compare"
   else echo "using existing $OUT/mesh_compare"; fi
-  for g in gen_touch gen_touch_set4; do   # same flags as corpus/touch/build_gen_touch*.sh (-O2 -ffp-contract=off)
+  for g in gen_touch gen_touch_set4 gen_touch_set5; do   # same flags as corpus/touch/build_gen_touch*.sh (-O2 -ffp-contract=off)
     ${CXX:-c++} -std=c++17 -O2 -ffp-contract=off -I"$B" "${INC[@]}" "$MESH/corpus/touch/$g.cpp" "$WORK/libshewchuk_predicates.a" -o "$WORK/bin/$g"
   done
 }
@@ -186,6 +195,73 @@ stage_report() {
   python3 -I "$HERE/mp21_report.py" "$WORK" "$(arch_tag)" ${MP21_REF_DIR:+--ref "$MP21_REF_DIR"}
 }
 
+# ---------------------------------------------------------------- MP22b ----------------------------------------------------------------
+# One source tree, one full build, then two incremental rebuilds (each patch touches only mesh_surface_intersection.cpp): the runner is copied to
+# $WORK/geo_unpatched, geo_mp20 (MP20 patch) and geo_mp22 (MP20 then MP22 patch, in this order) after each step.
+stage_build_chain() {
+  local D="$WORK/geo_chain" CPP=src/lib/geogram/mesh/mesh_surface_intersection.cpp
+  say "build Geogram $G_VER: unpatched, then MP20 patch, then MP22 patch (one tree, incremental)"
+  [ -s "$WORK/dl/geogram-$G_VER.tar.gz" ] || stage_fetch
+  local want20 want20cpp want22; want20="$(awk '/geogram_mp20.patch/{print $1}' "$FROZEN")"; want20cpp="$(awk '/patched mesh_surface_intersection.cpp/{print $1}' "$FROZEN")"
+  want22="$(awk '/geogram_mp22.patch/{print $1}' "$FROZEN22")"
+  [ -n "$want20" ] && [ -n "$want20cpp" ] && [ -n "$want22" ] || die "FROZEN_SHA256 files lack a patch hash"
+  [ "$(sha "$PATCH")" = "$want20" ] || die "geogram_mp20.patch sha256 differs from mp20/FROZEN_SHA256.txt"
+  [ "$(sha "$PATCH22")" = "$want22" ] || die "geogram_mp22.patch sha256 differs from mp22/FROZEN_SHA256.txt"
+  echo "patch hashes match the FROZEN files: mp20 $want20, mp22 $want22"
+  extract_tree "$D"
+  [ "$(sha "$D/src/$CPP")" = "$PRISTINE_CPP_SHA256" ] || die "pristine mesh_surface_intersection.cpp differs from the recorded v1.10.1 hash"
+  cmake_build "$D" unpatched
+  save_runner() {  # name
+    GEOGRAM_DIR="$D" sh "$MESH/lib/geogram/build.sh"
+    mkdir -p "$WORK/geo_$1/bin"; cp "$D/bin/geogram_runner" "$WORK/geo_$1/bin/geogram_runner"
+    echo "runner geo_$1 sha256 $(sha "$WORK/geo_$1/bin/geogram_runner")"
+  }
+  save_runner unpatched
+  patch -p1 -d "$D/src" < "$PATCH"
+  got="$(sha "$D/src/$CPP")"; echo "MP20-patched file sha256 $got (frozen $want20cpp)"
+  [ "$got" = "$want20cpp" ] || die "MP20-patched mesh_surface_intersection.cpp differs from the frozen hash"
+  say "incremental rebuild with the MP20 patch"
+  cmake --build "$D/build" -j "$JOBS" > "$D/build_mp20.log" 2>&1 || { tail -40 "$D/build_mp20.log"; die "geogram rebuild failed (mp20)"; }
+  save_runner mp20
+  patch -p1 -d "$D/src" < "$PATCH22"
+  echo "MP22-patched file sha256 $(sha "$D/src/$CPP") (informational; FROZEN_SHA256.txt of mp22 records only the patch)"
+  say "incremental rebuild with the MP22 patch on top"
+  cmake --build "$D/build" -j "$JOBS" > "$D/build_mp22.log" 2>&1 || { tail -40 "$D/build_mp22.log"; die "geogram rebuild failed (mp22)"; }
+  save_runner mp22
+  [ "$(sha "$WORK/geo_unpatched/bin/geogram_runner")" != "$(sha "$WORK/geo_mp20/bin/geogram_runner")" ] || die "mp20 runner identical to unpatched (patch not compiled in)"
+  [ "$(sha "$WORK/geo_mp20/bin/geogram_runner")" != "$(sha "$WORK/geo_mp22/bin/geogram_runner")" ] || die "mp22 runner identical to mp20 (patch not compiled in)"
+}
+
+stage_corpus5() {
+  say "generate set 5, verify the generator source and every output file against the hashes recorded before any run"
+  [ -x "$WORK/bin/gen_touch_set5" ] || stage_tools
+  local H="$MESH/corpus/touch" d=set5_corpus
+  want="$(awk '/gen_touch_set5.cpp/{print $1}' "$SET5_HASHES")"; [ -n "$want" ] || die "no generator hash in SET5_HASHES_BEFORE_RUN.txt"
+  [ "$(sha "$H/gen_touch_set5.cpp")" = "$want" ] || die "gen_touch_set5.cpp differs from the hash recorded before the run"
+  rm -rf "${WORK:?}/$d"; "$WORK/bin/gen_touch_set5" "$WORK/$d" > "$WORK/$d.gen.log" 2>&1 || { tail -5 "$WORK/$d.gen.log"; die "gen_touch_set5 failed"; }
+  tail -1 "$WORK/$d.gen.log"
+  if ( cd "$WORK/$d" && shacheck "$H/EXPECTED_SHA256_set5.txt" > "$WORK/$d.verify.log" 2>&1 ); then echo "$d: all $(wc -l < "$H/EXPECTED_SHA256_set5.txt") files match EXPECTED_SHA256_set5.txt"
+  else echo "$d: MISMATCH:"; grep -v ': OK$' "$WORK/$d.verify.log" | head -20; die "generated set 5 differs from EXPECTED_SHA256_set5.txt (different generator output on this platform); results would not be comparable. Stopping."; fi
+}
+
+# SHARD=k/N scores only pair indices i with i % N == k (default 0/1 = everything); outputs <build>_set5.tsv (or <build>_set5_sK.tsv when N > 1).
+stage_score5() {
+  [ -d "$WORK/set5_corpus" ] || stage_corpus5
+  local b k=0 n=1 suf=""; if [ -n "${SHARD:-}" ]; then k="${SHARD%/*}"; n="${SHARD#*/}"; fi; [ "$n" = 1 ] || suf="_s$k"
+  mkdir -p "$WORK/score"; tail -n +2 "$WORK/set5_corpus/manifest.tsv" | cut -f1 | awk -v k="$k" -v n="$n" '(NR-1)%n==k' > "$WORK/score/ids_set5$suf.txt"
+  echo "scoring $(wc -l < "$WORK/score/ids_set5$suf.txt") of $(( $(wc -l < "$WORK/set5_corpus/manifest.tsv") - 1 )) pairs (shard $k/$n) with $JOBS parallel jobs per build"
+  for b in unpatched mp20 mp22; do
+    [ -x "$WORK/geo_$b/bin/geogram_runner" ] || die "missing $WORK/geo_$b/bin/geogram_runner (build-chain stage not run)"
+    say "score $b on set 5 (shard $k/$n)"; shard_score "${b}_set5$suf" "$WORK/geo_$b/bin/geogram_runner" "$WORK/set5_corpus" "$WORK/score/ids_set5$suf.txt"
+    [ "$b" = mp22 ] || find "$WORK/score" -path "*/${b}_set5${suf}_*/*.msh" -delete    # only the MP22 outputs are kept and hashed
+  done
+}
+
+stage_report5() {
+  say "report (MP22b)"
+  python3 -I "$HERE/mp22b_report.py" "$WORK" "$(arch_tag)" "$(( $(wc -l < "$WORK/set5_corpus/manifest.tsv") - 1 ))"
+}
+
 case "${1:-all}" in
   fetch) stage_fetch ;;
   build-unpatched) build_geogram unpatched ;;
@@ -194,6 +270,11 @@ case "${1:-all}" in
   corpus) stage_corpus ;;
   score) stage_score ;;
   report) stage_report ;;
+  build-chain) stage_build_chain ;;
+  corpus5) stage_corpus5 ;;
+  score5) stage_score5 ;;
+  report5) stage_report5 ;;
+  mp22b) stage_fetch; stage_build_chain; stage_tools; stage_corpus5; stage_score5; stage_report5 ;;
   all) stage_fetch; build_geogram unpatched; build_geogram patched; stage_tools; stage_corpus; stage_score; stage_report ;;
   *) die "unknown stage $1" ;;
 esac

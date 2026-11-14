@@ -328,6 +328,80 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  # MP22b (poc/gpu/mesh/PLAN.md section MP22 / MP22b): acceptance run of the MP22 Geogram patch on set 5 (fresh seeds, 1100 pairs, 3300 rows per
+  # build; generator and file hashes recorded before any run). Same matrix and same script as the MP21a job, as its own job so the two cannot delay
+  # each other (the M1 needs about 1 minute per build for the scoring; one Geogram build + two incremental rebuilds + three scorings should be
+  # well inside 25 minutes here). Builds unpatched, MP20 (patch hash checked against mp20/FROZEN_SHA256.txt) and MP20 then MP22 (hash checked
+  # against mp22/FROZEN_SHA256.txt), scores all three on set 5, prints per-class verdict tables, the bar line
+  # "MP22b: 0 FAIL and 0 REFUSED on this platform: MET/NOT MET" and the sha256 of the MP22 outputs. Informational (continue-on-error) like MP21a:
+  # read the bar line, not the check mark. Hard failures (exit 1): a hash differs from a recorded one, a build fails, set 5 does not regenerate
+  # bit-identically on this platform.
+  mesh-mp22b-geogram:
+    name: Mesh MP22b, set 5 with MP22-patched Geogram ${{ matrix.arch }} (informational)
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      WORK: /home/runner/mp22b_work
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            poc/gpu
+            src/third_party/boost
+          fetch-depth: 1
+
+      - name: Install packages
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ ninja-build make patch curl python3
+
+      - name: Fetch the pinned Shewchuk predicates (scoring oracle)
+        run: poc/gpu/mesh/oracle/fetch.sh
+
+      - name: Fetch Geogram v1.10.1 and verify the pinned tarball sha256
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh fetch
+
+      - name: Build Geogram unpatched, then with the MP20 patch, then with the MP22 patch (frozen hashes checked)
+        timeout-minutes: 20
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh build-chain
+
+      - name: Build the scoring oracle and the corpus generators
+        timeout-minutes: 10
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh tools
+
+      - name: Generate set 5, verify the generator and every file against the hashes recorded before the run
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh corpus5
+
+      - name: Score unpatched, MP20 and MP22 on set 5 (3300 rows each)
+        timeout-minutes: 25
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh score5
+
+      - name: Verdict tables, bar line and MP22 output hashes
+        run: poc/gpu/mesh/ci/mp21_geogram_xplat.sh report5
+
+      - name: Upload TSVs, hashes and MP22 outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp22b-geogram-${{ matrix.arch }}
+          path: |
+            ${{ env.WORK }}/report5/
+            ${{ env.WORK }}/score/*.tsv
+            ${{ env.WORK }}/score/log_*.log
+            ${{ env.WORK }}/score/mp22_set5_*/*.msh
+            ${{ env.WORK }}/*.log
+            ${{ env.WORK }}/geo_chain/build*.log
+          if-no-files-found: warn
+          retention-days: 30
+
   nvidia-t4:
     name: NVIDIA Tesla T4 (hosted GPU runner, billed)
     needs: linux-lavapipe

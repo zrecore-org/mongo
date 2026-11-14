@@ -1,0 +1,5 @@
+RECORDED 2026-11-14T16:14:57Z before any Geogram build or run touched set 5 (generator run twice: byte-identical)
+d2f64dd7ab8d22f5645e1265b23764e4d727d97ec71c09f44d0aba8adbd688e0  poc/gpu/mesh/corpus/touch/gen_touch_set5.cpp
+dc6aad4d423036c609eddfeaad26bc45c5880ab330f543bb1ca0f422a9cbfe35  poc/gpu/mesh/corpus/touch/EXPECTED_SHA256_set5.txt
+232b2bb7883a2d677c593de2d138c611ff1b6efef30bda1ddb2ecb3f11476f3f  poc/gpu/mesh/corpus/touch/build_gen_touch_set5.sh
+ae975969cbd6a4a12845322dea92ee27e1c5e377471bede545f12eba17104a7f  storage/mesh/mp22b/gen1/manifest.tsv
