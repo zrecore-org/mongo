@@ -4,7 +4,7 @@
 // FMA contraction and flush-to-zero cannot change a result.
 //
 // Written from the IEEE 754 semantics for this project. The idea of exact binary64 in integers (rather than float pairs) comes from the
-// vulkan-gpu fork of pg-strom (kernels_vm/f64_soft.inc, which was read for its approach only; no code was copied) and the ArrowMetal write-up it cites.
+// vulkan-gpu fork of pg-strom, as described in its plan (.claude/hw-acceleration.md, A10). Its source file kernels_vm/f64_soft.inc was NOT read, and no code was copied.
 //
 // Literals use the `ul` suffix in both languages (64-bit in C++ on LP64 targets: macOS and Linux).
 // Domain: finite inputs, no subnormals, results that stay normal (the caller checks the exponent window; see softsum.comp).

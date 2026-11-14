@@ -459,7 +459,7 @@ Idea from how the pg-strom fork handles `float8` (integer-emulated IEEE binary64
 Files: `shaders/f64soft.inc` (one text compiled as C++ and as GLSL), `shaders/softsum.comp`, `shaders/softadd_probe.comp`, `poc12_f64soft.cpp`;
 `POC2_SOFT=1 ./run.sh poc2_sum {groups|accuracy|bench G}` runs the existing POC 2 checks with the soft kernel (bench writes `out/poc2_bench_G*_soft.csv`).
 The add is written from the IEEE semantics for this project (round to nearest even, ten guard bits plus a sticky bit, every shift count below 64); the fork's
-`f64_soft.inc` was read for its approach only and no code was copied. Domain: finite, no subnormals, exponent in [-99, 99] (the df64 window, kept so both paths fall back
+`f64_soft.inc` was not read (only its description in the fork's plan), so no code was copied. Domain: finite, no subnormals, exponent in [-99, 99] (the df64 window, kept so both paths fall back
 to the CPU on the same batches), at most 16 groups; the `_special` NaN tracker is replaced by the existing CPU-fallback flag.
 
 **Exactness of the integer add.**
