@@ -11,7 +11,7 @@
 # Rules: one entry per who; strict first-in first-out; a fix push after a failed run joins at the back; entries older than 4 hours are
 # ignored (a crashed session must not block the runner forever). QUEUE can be overridden for testing. Needs `gh`.
 QUEUE=${T4_CI_QUEUE:-/tmp/gpu_t4_ci.queue}
-REPOS=${T4_CI_REPOS:-"zrecore-org/mongo zrecore-org/pg-strom"}
+REPOS=${T4_CI_REPOS:-"zrecore-org/mongo zrecore-org/pg-strom zrecore-org/exactmesh"}
 MAXAGE=${T4_CI_MAXAGE:-14400}
 touch "$QUEUE"
 live() { local now; now=$(date +%s); awk -v n="$now" -v m="$MAXAGE" '($1 + m) > n' "$QUEUE"; }
