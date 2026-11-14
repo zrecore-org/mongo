@@ -144,6 +144,21 @@ jobs:
         timeout-minutes: 10
         run: ./run.sh poc2_sum groups
 
+      - name: POC 12, integer binary64 add (host check, no GPU)
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        run: ./run.sh poc12_f64soft host
+
+      # Informational until seen passing on every driver: 64-bit integer arithmetic on the device.
+      - name: POC 12, integer binary64 $sum on the device (informational)
+        working-directory: poc/gpu
+        timeout-minutes: 10
+        continue-on-error: true
+        run: |
+          ./run.sh poc12_f64soft device
+          POC2_SOFT=1 ./run.sh poc2_sum groups
+          POC2_SOFT=1 ./run.sh poc2_sum accuracy
+
       - name: POC 0, loader and probe (informational)
         working-directory: poc/gpu
         continue-on-error: true
@@ -337,6 +352,18 @@ jobs:
         working-directory: poc/gpu
         timeout-minutes: 10
         run: ./run.sh poc2_sum groups
+
+      - name: "POC 12, integer binary64 add and $sum (informational)"
+        working-directory: poc/gpu
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          ./run.sh poc12_f64soft host
+          ./run.sh poc12_f64soft device
+          POC2_SOFT=1 ./run.sh poc2_sum groups
+          POC2_SOFT=1 ./run.sh poc2_sum accuracy
+          POC2_SOFT=1 ./run.sh poc2_sum bench 1
+          POC2_SOFT=1 ./run.sh poc2_sum bench 16
 
       - name: "POC 2, $sum timing (G=1 and G=16) and accuracy"
         working-directory: poc/gpu

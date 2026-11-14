@@ -1,0 +1,59 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+// POC 12: segmented $sum with MongoDB's DoubleDoubleSummation run in exact binary64 emulated in 64-bit integers (f64soft.inc),
+// instead of df64 (float pairs). Same grid-stride accumulation and workgroup tree as the df64 kernels; every partial is a
+// (sum, addend) pair of binary64 bit patterns and the tree combines two partials with two ddsAdd calls, as the host does.
+// Named softsum (not sum_*) so the CMake rule that also builds a no-`precise` variant of sum_* kernels does not apply: no float op is used here.
+#include "f64soft.inc"
+
+layout(local_size_x_id = 0) in;
+layout(constant_id = 1) const uint GROUPS = 1;
+const uint kMaxGroups = 16u;   // fixed size, not GROUPS: a spec-constant-sized local array gave wrong results on Metal
+
+layout(std430, binding = 0) readonly buffer In { uint64_t x[]; };           // raw IEEE double bits
+layout(std430, binding = 1) readonly buffer Gid { uint gid[]; };
+layout(std430, binding = 2) writeonly buffer Out { uint64_t part[]; };      // [workgroup][group][sum, addend]
+layout(std430, binding = 3) writeonly buffer Flag { uint badOut[]; };
+layout(push_constant) uniform P { uint n; uint stride; } pc;
+
+shared uint64_t shS[1024];
+shared uint64_t shA[1024];
+shared uint shBad;
+
+void main() {
+    uint t = gl_LocalInvocationID.x;
+    uint64_t s[kMaxGroups], a[kMaxGroups];
+    for (uint k = 0u; k < GROUPS; k++) { s[k] = 0ul; a[k] = 0ul; }
+    uint bad = 0u;
+    for (uint i = gl_GlobalInvocationID.x; i < pc.n; i += pc.stride) {
+        uint g = 0u;
+        if (GROUPS > 1u) { g = gid[i]; if (g >= GROUPS) { g = 0u; bad = 1u; } }
+        uint64_t v = x[i];
+        int e = int((v >> 52) & 0x7FFul);
+        // The same window as the df64 path (finite, no subnormals, exponent in [-99, 99]); outside it the batch goes to the CPU.
+        bool zero = (v & 0x7FFFFFFFFFFFFFFFul) == 0ul;
+        if (!zero && (e == 0 || e - 1023 < -99 || e - 1023 > 99)) { bad = 1u; v = 0ul; }
+        ddsAdd(s[g], a[g], v);
+    }
+    uint wgs = gl_WorkGroupSize.x;
+    if (t == 0u) shBad = 0u;
+    barrier();
+    if (bad != 0u) atomicOr(shBad, 1u);
+    for (uint k = 0u; k < GROUPS; k++) {
+        shS[t] = s[k]; shA[t] = a[k];
+        barrier();
+        for (uint st = wgs >> 1; st > 0u; st >>= 1) {
+            if (t < st) {
+                uint64_t S = shS[t], A = shA[t];
+                ddsAdd(S, A, shS[t + st]);
+                ddsAdd(S, A, shA[t + st]);
+                shS[t] = S; shA[t] = A;
+            }
+            barrier();
+        }
+        if (t == 0u) { part[(gl_WorkGroupID.x * GROUPS + k) * 2u] = shS[0]; part[(gl_WorkGroupID.x * GROUPS + k) * 2u + 1u] = shA[0]; }
+        barrier();
+    }
+    if (t == 0u) badOut[gl_WorkGroupID.x] = shBad;
+}

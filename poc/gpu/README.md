@@ -65,6 +65,7 @@ The algorithms here were implemented for this project from the published descrip
 | A. Thall, "Extended-Precision Floating-Point Numbers for GPU Computation" (2007) | The df64 (float-float) approach on GPUs | <https://andrewthall.org/papers/df64_qf128.pdf> |
 | J. R. Shewchuk, "Adaptive Precision Floating-Point Arithmetic and Fast Robust Geometric Predicates" (1997) | Exactly rounded summation with non-overlapping partials, used as the exact reference in the ill-conditioned `$sum` test (the same algorithm as Python's `math.fsum`) | <https://people.eecs.berkeley.edu/~jrs/papers/robustr.pdf> |
 | Python `math.fsum` | Reference for the partials algorithm above (CPython, PSF license) | <https://docs.python.org/3/library/math.html> |
+| Integer-emulated IEEE binary64 (exact `float8` in 64-bit integers) | `shaders/f64soft.inc` (POC 12). Approach taken from the pg-strom fork's `kernels_vm/f64_soft.inc`, which I read for its approach only; the implementation here was written from the IEEE 754 rules and shares no code. The fork credits the ArrowMetal write-up for the idea; I have not read that article. | n/a | <https://github.com/zrecore-org/pg-strom>, <https://theaivibe.org/blog/metal-has-no-double-float64-on-the-apple-silicon-gpu> |
 | LSD counting radix sort / radix select | `poc3_select` (MSD byte-wise radix select) and `poc7_sort` (4-bit LSD sort with per-block histograms and a global scan). These are textbook techniques; no specific implementation was followed. | n/a |
 
 ### Design inspiration from pg-strom

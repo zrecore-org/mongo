@@ -453,12 +453,59 @@ and a small `slang_spirv` rule (`slang.bzl`). Results on this machine:
   (generics, one language for Metal and Vulkan, one preprocessor) is the pg-strom agent's case and was not re-measured here. Kernel correctness and speed were equal on M1, lavapipe and T4.
   Whether the numerics twin is worth `slangc` in the build is for the Phase 1 design.
 
+## POC 12: `$sum` in exact binary64 emulated with 64-bit integers (instead of df64)
+Idea from how the pg-strom fork handles `float8` (integer-emulated IEEE binary64, bit-identical to a hardware double). Here it runs MongoDB's own
+`DoubleDoubleSummation::addDouble` per element, so the GPU does the same arithmetic as the CPU instead of approximating it with float pairs.
+Files: `shaders/f64soft.inc` (one text compiled as C++ and as GLSL), `shaders/softsum.comp`, `shaders/softadd_probe.comp`, `poc12_f64soft.cpp`;
+`POC2_SOFT=1 ./run.sh poc2_sum {groups|accuracy|bench G}` runs the existing POC 2 checks with the soft kernel (bench writes `out/poc2_bench_G*_soft.csv`).
+The add is written from the IEEE semantics for this project (round to nearest even, ten guard bits plus a sticky bit, every shift count below 64); the fork's
+`f64_soft.inc` was read for its approach only and no code was copied. Domain: finite, no subnormals, exponent in [-99, 99] (the df64 window, kept so both paths fall back
+to the CPU on the same batches), at most 16 groups; the `_special` NaN tracker is replaced by the existing CPU-fallback flag.
+
+**Exactness of the integer add.**
+- Host (`poc12_f64soft host`): 2,320,004 operand pairs against the hardware `a + b`, 0 differ. The pairs are aimed at the corners: exponent differences 0, 1, 2, 3, 10, 52 to 55, 62 to 65, 100 and 1000 with both sign combinations;
+  exact ties; mantissa round-up overflow; `x + (-x)` and one-ulp cancellation; zeros of both signs; plus uniform random patterns.
+- `DoubleDoubleSummation` built on it: 200 sequences of 20,000 values, the (sum, addend) pair equals the hardware-double implementation bit for bit.
+- The check can fail: planted mutants are caught (drop the sticky bit: 12 of 232,004 pairs differ; round half up: 6,356; ties always down: 6,373).
+  The sticky-bit mutant is caught by only 12 pairs, so that corner is thinly covered.
+- Device, Apple M1 Pro through MoltenVK (`poc12_f64soft device`): 928,004 pairs, 0 differ. (The host passing proves little about shifts: arm64 masks shift counts, so the device run is the real check.)
+
+**`$sum` on the M1 Pro (soft kernel through the unchanged POC 2 checks).**
+- Random sensor-like data, 200 batches of 100k: the final double equals CPU `$sum` in **200 of 200** (max 0 ulp). The df64 kernel: 2 of 200 (max 1155 ulp). CPU `$sum` on shuffled input: 200 of 200.
+- Grouped (1M values): every group is bit-identical to the CPU for G = 1, 2, 4 and 16 (df64: close, never identical), for both split slots (which are the same kernel here).
+- Determinism (30 runs, 5 grid sizes: one distinct result each) and the fallback flags (1e300, NaN, denormal set it, clean data does not) behave as for df64.
+- Limits of "bit-identical": it is measured on well-conditioned random data, where the CPU's own result does not depend on order. On the ill-conditioned case (+1e10, 1M small values, -1e10)
+  the soft result is the exact answer (0 ulp from the reference) while CPU `$sum` is 1,319,092 ulp off, so there the two **differ**: when cancellation makes `DoubleDoubleSummation` order-dependent, a parallel
+  tree cannot reproduce a serial scan, and here it happens to land on the more accurate side.
+
+**Speed on the M1 Pro** (ms, GPU path total with upload; one bench run, 7 to 15 reps median; CPU `$sum` is `DoubleDoubleSummation`):
+
+| G | n | CPU `$sum` | GPU df64 | GPU soft binary64 |
+|---|---|---|---|---|
+| 1 | 256K | 1.71 | 0.65 | 0.59 |
+| 1 | 1M | 7.17 | 1.42 | 1.61 |
+| 1 | 4M | 28.3 | 4.64 | 7.78 (noisy row, see below) |
+| 1 | 16M | 114.4 | 17.2 | 16.5 |
+| 16 | 1M | 2.48 | 3.92 | 10.7 |
+| 16 | 4M | 9.99 | 14.3 | 40.6 |
+| 16 | 16M | 39.6 | 37.2 | 90.4 |
+
+- One group: soft is as fast as df64 (the kernel is bound by reading the doubles, so the roughly ten emulated adds per element are hidden). Two repeat runs of the 4M row gave GPU-kernel times of 4.2 ms (soft) and 3.9 ms (df64); the 7.78 above was
+  noise. At 1M, 4M and 16M the repeat kernel times are 1.31 / 4.2 / 13.3 ms (soft) against 1.27 / 3.9 / 14.3 ms (df64).
+- Sixteen groups: soft is 2.4x to 2.7x slower than df64 (it keeps 16 sums and 16 addends as 64-bit values per thread) and slower than the CPU at every size up to 16M (0.23x to 0.44x). Where df64 reached break-even at 16M, soft does not.
+- Not measured: the T4 and lavapipe (CI steps are in `gpu-poc.yml`, informational), `$stdDev` in soft form, other group counts, a Newton-style faster alternative, a wider exponent window, and any GPU without `shaderInt64`.
+
+**Reading.** For one group (and probably a few) the integer-binary64 kernel removes the main objection to GPU `$sum`: it is bit-identical to the CPU on well-conditioned data and costs nothing extra over df64 on the M1.
+It does not help the many-group case, and it needs `shaderInt64` (present on the M1, T4 and lavapipe; the fork notes that MoltenVK's feature flags over-report, so the startup probe is still required: the device probe here is that probe for the add).
+
 ## Phase 1 go/no-go: conditional go
 - Fix the continuous percentile CPU path first (`partial_sort` -> `nth_element` + `max_element`, POC 6).
 - Go only as opt-in, for batches of at least 256K elements (about 4M for `$sum` and `$stdDev` with 16 groups on the M1), with the CPU path as automatic fallback (POC 4)
   and a startup known-answer self-test that gates df64 use (POC 1 and lavapipe above: `precise` on every df64 op is mandatory).
 - `$sum` on the GPU is limited to few groups (at most about 16) and is not bit-identical to the CPU, so it must not be on by default; selection and
   percentile are exact and are the better first targets.
+  Update (POC 12): an integer-emulated binary64 `$sum` was bit-identical to the CPU on well-conditioned data on the M1 for 1 to 16 groups, at df64 speed for one group and 2.4x to 2.7x slower than df64 for 16
+  groups; the T4 and lavapipe are not yet measured, so the "opt-in because not bit-identical" condition is only provisionally relaxed for one group.
 - Phase 1 candidates, in order: (1) selection/percentile (exact, 6x to 12x on the T4); (2) `$stdDev` with one or few
   groups (POC 9: two df64 passes, accuracy matches the CPU; 6x to 7x on the T4, 2.9x to 3.3x on the M1 from 1M values
   for one group; with 16 groups it loses to the CPU on the M1 until about 16M values); (3) `$sum` with few groups;
