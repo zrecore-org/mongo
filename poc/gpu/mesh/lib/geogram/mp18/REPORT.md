@@ -24,3 +24,16 @@ Trigger: vertex coincidence or exact bounding-box contact; exact post-check at t
 | guard mutants caught | met: 3/3 (skipped axis, off-by-one, post-check off) |
 Limits stated by the sub-agent: external contact between convex solids; the guard was developed against this family (two sheared pairs failed until facet-derived test points were added), so it is **not held out**; internal contact and non-convex solids untested at this stage; the 6 huge-offset failures are a different defect and unchanged.
 Kill criterion (failure reaches generic overlaps): does not apply.
+
+## Held-out test of guard v1 (sub-agent run, TSV counts re-checked by me; `results_heldout_v1101.tsv`, `corpus/touch/gen_touch_heldout.cpp`, Geogram v1.10.1 only)
+New generator, new seeds and placements; guard unchanged. 1137 rows (379 pairs): unguarded 999 PASS / 138 FAIL; **guarded 1122 PASS / 9 FAIL / 6 REFUSED.** The guard repaired 129 of the 138 failing rows; the 63 passing valid cases stayed byte-identical.
+| class | rows | unguarded FAIL | guarded FAIL / REFUSED |
+|---|---|---|---|
+| nested, 1 shared vertex | 24 | 15 | 0 / 0 |
+| nested, shared edge; shared face | 24 + 24 | 0 | 0 / 0 |
+| non-convex L/U prism, vertex-vertex | 54 | 24 | 3 / 0 |
+| three components, vertex-vertex | 27 | 9 | 0 / 0 |
+| random vertex-vertex (permutations + shears) | 960 | 78 | 6 / 0 |
+| two contact vertices | 24 | 12 | 0 / 6 |
+Silent wrong answers remain on 3 pairs (`held_nonconvex_vv_U_reflex_tet_m2`, `held_randvv_te5_bx3m_146`, `held_randvv_te5_oc3m_304`): the contact trigger fired but the post-check found no mismatch, so the miss is in the post-check's choice of test points. Two pairs are refused cleanly (`twovertex_tet_bridge_m0/_m1`). (The sub-agent's summary said "12 refused or failed rows"; the TSV has 9 + 6 = 15.)
+**Verdict: guard v1 fails the held-out test.** It removes most of the failure but leaves silent wrong results, which the product cannot accept. Unguarded failures are all vertex contact (the root cause is local to it). The non-convex "one contact" expectations are hand-derived (the generator checks only a separating plane); the failing cases were not independently re-verified.
