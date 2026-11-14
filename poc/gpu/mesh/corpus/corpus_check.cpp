@@ -1,7 +1,7 @@
 // MP01 check: the manifest is true. For each adversarial case: A and B load, indices are valid, the exact volume of every box operand equals the
 // analytic expectation, inclusion-exclusion holds for the expected volumes, and every tag that can be tested objectively (open, non-manifold-edge,
 // inverted, unwelded-vertices, zero-area-triangle, duplicate-triangle, valid) is actually true of the meshes. Run: corpus_check <corpusdir>
-#include "../harness/exact.h"
+#include "../harness/topology.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -11,31 +11,8 @@
 #include <sstream>
 
 using namespace mesh;
-struct Topo { bool closed2 = true, anyOpen = false, nonManifold = false, duplicateTri = false, zeroArea = false, unwelded = false, inverted = false; };
-
-static Topo analyze(const Mesh& m) {
-    Topo t;
-    std::map<std::pair<uint32_t, uint32_t>, std::pair<int, int>> edges;   // (min,max) -> (count a->b with a<b, count b->a)
-    std::set<std::array<uint32_t, 3>> tris;
-    for (size_t k = 0; k < m.nt(); k++) {
-        uint32_t a = m.t[3*k], b = m.t[3*k+1], c = m.t[3*k+2];
-        uint32_t idx[3] = {a, b, c};
-        for (int e = 0; e < 3; e++) { uint32_t p = idx[e], q = idx[(e + 1) % 3]; auto key = std::make_pair(std::min(p, q), std::max(p, q)); auto& v = edges[key]; if (p < q) v.first++; else v.second++; }
-        std::array<uint32_t, 3> s = {a, b, c}; std::sort(s.begin(), s.end()); if (!tris.insert(s).second) t.duplicateTri = true;
-        double ab[3], ac[3]; const double *pa = &m.v[3*a], *pb = &m.v[3*b], *pc = &m.v[3*c];
-        BigInt v[9]; toCommonInts({pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2]}, v); (void)ab; (void)ac;
-        BigInt ux = v[3]-v[0], uy = v[4]-v[1], uz = v[5]-v[2], wx = v[6]-v[0], wy = v[7]-v[1], wz = v[8]-v[2];
-        if ((uy*wz-uz*wy) == 0 && (uz*wx-ux*wz) == 0 && (ux*wy-uy*wx) == 0) t.zeroArea = true;
-    }
-    for (auto& e : edges) {
-        int n = e.second.first + e.second.second;
-        if (n == 1) t.anyOpen = true;
-        if (n > 2 || (n == 2 && e.second.first != 1)) t.nonManifold = true;   // more than two faces, or two faces with the same direction
-    }
-    std::set<std::array<double, 3>> pts; for (size_t i = 0; i < m.nv(); i++) if (!pts.insert({m.v[3*i], m.v[3*i+1], m.v[3*i+2]}).second) t.unwelded = true;
-    t.inverted = signExact(exactVolumeTimes6(m)) < 0;
-    return t;
-}
+using Topo = Topology;
+static Topo analyze(const Mesh& m) { return analyzeTopology(m); }
 static bool parseDyadic(const std::string& s, Dyadic& d) {
     size_t star = s.find("*2^"); if (star == std::string::npos) return false;
     d.num = BigInt(s.substr(0, star)); d.exp2 = atoi(s.c_str() + star + 3); return true;

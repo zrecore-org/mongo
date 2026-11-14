@@ -570,6 +570,12 @@ Written by a sub-agent; I re-derived the percentages from the CSV and checked th
   - The S2 in the tree is spherical (it never decides a row); the SBOM pins a 2015 s2geometry commit while the files were imported in 2012 and there is no import script. Boost.Geometry is not in the vendored Boost 1.88.0.
   - Manifold v3.5.5 and Embree: Apache-2.0; Clipper2, Boost.Geometry: BSL-1.0; earcut: ISC; nanobind is not required by Manifold.
 
+### Scoring tool for the library evaluations (built for Wave 1, before any library result): `mesh_compare`
+`mesh/oracle/compare.cpp` with `harness/pip.h` (exact point-in-solid by ray parity with Shewchuk's exact predicates and a symbolic tie-break) and `harness/topology.h` (closed/manifold/Euler/components, shared with `corpus_check`).
+Self-test (`build/mesh/mesh_compare selftest`): a correct intersection result passes; results that are replaced by A, missing a triangle, inverted, shifted by 2^-20, empty, or the wrong box all fail; A minus A = empty and A union A = A pass; a vertex moved by 2^-45 passes (inside the stated tolerance, a documented blind spot);
+the point test agrees with the analytic answer on 112 points including rays through edges, vertices and face diagonals, and both planted bugs (no tie-break, ignoring the crossing direction) are caught; swapping x and y (a different ray direction) leaves the classification of 600 sphere points unchanged.
+The pass bars were committed in `mesh/PLAN.md` before any library output was scored.
+
 ### Wave 0 status
 Done locally: MP01, MP02 and MP06 meet the Wave 0 criteria on this machine (corpus byte-reproducible, every planted mutant caught, predicate oracles agree at 1e7, every SFCGAL function has a parity row).
 **Cross-architecture corpus agreement:** aarch64 matched on the first run; x86_64 differed in one file because of an unspecified argument-evaluation order in the generator (fixed, see MP01); the re-run on x86_64 is pending.
