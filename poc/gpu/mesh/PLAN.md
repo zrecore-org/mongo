@@ -113,6 +113,7 @@ Fixed on 2026-11-14, **before any library output was scored**. Scoring tool: `me
 4. Speed vs Manifold and Geogram on the same cases (honest: single thread, include the quantization step).
 **Kill criteria (numbers fixed now):** if the unfiltered 512-bit integer plane-plane-plane sign costs more than 50x the time of Shewchuk's adaptive `orient3d` on the same random inputs (M1, single thread, one-time measurement), or step 3 needs more than the plane-based core plus a simple arrangement to pass, stop and record why.
 **Census result (2026-11-14, `RESULTS.md`):** the 7 distinct failing names need L <= 53, so the registered width is **512-bit**; curved cases (L = 57-59) are OUT-OF-RANGE at 512.
+**Outcome (2026-11-14):** steps 1-2 exactness bars met; kill criterion triggered at 800x (RESULTS.md); steps 3-4 not run. MP17 stopped as registered.
 **Out of scope:** GPU kernels (step 1 only counts limb ops), octree acceleration, non-manifold repair, production API.
 
 ## Resource rules
