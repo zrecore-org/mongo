@@ -9,6 +9,9 @@
 #include <cmath>
 #include <cstring>
 #include <random>
+#include <thread>
+#include <atomic>
+extern "C" { void exactinit(void); double orient3d(double* pa, double* pb, double* pc, double* pd); }
 int g_mut = 0;
 #define F64SOFT_C 1
 #include "shaders/f64soft.inc"
@@ -129,7 +132,64 @@ static int deviceMode(long N) {
     return rc ? 3 : 0;
 }
 
+
+// ---- streaming run for the G2 bar (>= 1e9 random inputs plus every adversarial class) ----
+// Inputs are generated in chunks by all cores (deterministic: the seed depends on class, chunk and thread), run through the shader, and every case is checked:
+// the device's sign, determinant bits and bound bits against the hardware-double reference, and every DEFINITE device sign against Shewchuk's adaptive orient3d (exact).
+static int streamMode(long randomN, long advN) {
+    gpu::Ctx ctx;
+    if (!ctx.init(gpu::defaultLoaderPaths())) { printf("no GPU: %s\n", ctx.error.c_str()); return 2; }
+    exactinit();
+    printf("device=%s memory=%s; stream: %ld random cases + %ld per adversarial class\n", ctx.props.deviceName, ctx.memMode(), randomN, advN);
+    auto k = ctx.makeKernel("build/shaders/orient_filter.spv", 2, 4);
+    const uint32_t C = 2000000;
+    auto A = ctx.alloc((size_t)C * 96), R = ctx.alloc((size_t)C * 24);
+    const unsigned T = std::max(1u, std::thread::hardware_concurrency());
+    std::vector<uint64_t> refDet(C), refBound(C); std::vector<int8_t> refSign(C);
+    struct Tot { long n = 0, bitDiff = 0, wrong = 0, unc = 0, pos = 0, neg = 0; double devMs = 0; } all;
+    int rc = 0; double wall0 = gpu::nowMs();
+    for (int cls = 0; cls < kNumCls; cls++) {
+        long want = cls == kRandom ? randomN : advN, done = 0, chunk = 0; Tot t;
+        while (done < want) {
+            uint32_t n = (uint32_t)std::min<long>(C, want - done);
+            std::vector<std::thread> th;
+            for (unsigned w = 0; w < T; w++) th.emplace_back([&, w] {
+                uint32_t lo = (uint64_t)n * w / T, hi = (uint64_t)n * (w + 1) / T;
+                Rng r(0x9E3779B97F4A7C15ull * (cls + 1) + 1000003ull * chunk + w);
+                for (uint32_t i = lo; i < hi; i++) { double q[12]; gen(r, cls, q); memcpy((char*)A.ptr + (size_t)i * 96, q, 96); uint64_t d, b; refSign[i] = (int8_t)filterRef(q, &d, &b); refDet[i] = d; refBound[i] = b; }
+            });
+            for (auto& x : th) x.join();
+            double t0 = gpu::nowMs();
+            ctx.begin(); ctx.upload(A, (size_t)n * 96); ctx.dispatch(k, {&A, &R}, &n, (n + 63) / 64); ctx.download(R, (size_t)n * 24); ctx.submitWait();
+            t.devMs += gpu::nowMs() - t0;
+            const uint64_t* dev = (const uint64_t*)R.ptr;
+            std::atomic<long> bitDiff{0}, wrong{0}, unc{0}, pos{0}, neg{0};
+            th.clear();
+            for (unsigned w = 0; w < T; w++) th.emplace_back([&, w] {
+                uint32_t lo = (uint64_t)n * w / T, hi = (uint64_t)n * (w + 1) / T; long bd = 0, wr = 0, un = 0, ps = 0, ng = 0;
+                for (uint32_t i = lo; i < hi; i++) {
+                    int ds = (int)dev[3 * (size_t)i] - 1;
+                    bd += ds != refSign[i] || dev[3 * (size_t)i + 1] != refDet[i] || dev[3 * (size_t)i + 2] != refBound[i];
+                    if (ds == 0) un++; else { double q[12]; memcpy(q, (char*)A.ptr + (size_t)i * 96, 96); int ex = sgn(orient3d(q, q + 3, q + 6, q + 9)); wr += ex != ds; (ds > 0 ? ps : ng)++; }
+                }
+                bitDiff += bd; wrong += wr; unc += un; pos += ps; neg += ng;
+            });
+            for (auto& x : th) x.join();
+            t.n += n; t.bitDiff += bitDiff; t.wrong += wrong; t.unc += unc; t.pos += pos; t.neg += neg; done += n; chunk++;
+            if (chunk % 50 == 0) { printf("  %-38s %12ld / %ld cases, bit differences %ld, wrong %ld\n", kName[cls], done, want, t.bitDiff, t.wrong); fflush(stdout); }
+        }
+        printf("%-38s n=%-11ld device==ref %s (%ld bit differences)  wrong definite signs vs Shewchuk exact: %ld  uncertain %.3f%%  (+%ld, -%ld)  device time %.2f s\n", kName[cls], t.n, t.bitDiff ? "NO" : "yes", t.bitDiff, t.wrong, 100.0 * t.unc / t.n, t.pos, t.neg, t.devMs / 1000);
+        all.n += t.n; all.bitDiff += t.bitDiff; all.wrong += t.wrong; all.unc += t.unc; all.devMs += t.devMs;
+    }
+    printf("summary: %ld cases, device vs reference bit differences %ld, wrong definite signs vs Shewchuk exact %ld, uncertain %.2f%% overall, device time %.1f s, wall %.1f s\n", all.n, all.bitDiff, all.wrong, 100.0 * all.unc / all.n, all.devMs / 1000, (gpu::nowMs() - wall0) / 1000);
+    rc = all.bitDiff != 0 || all.wrong != 0;
+    printf("%s\n", rc ? "FAIL" : "PASS");
+    ctx.release(A); ctx.release(R); ctx.release(k); ctx.destroy();
+    return rc ? 3 : 0;
+}
+
 int main(int argc, char** argv) {
     std::string m = argc > 1 ? argv[1] : "host"; long N = argc > 2 ? atol(argv[2]) : 700000;
+    if (m == "stream") return streamMode(argc > 2 ? atol(argv[2]) : 1000000000L, argc > 3 ? atol(argv[3]) : 50000000L);
     return m == "device" ? deviceMode(N) : hostMode(N);
 }

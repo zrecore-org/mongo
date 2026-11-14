@@ -75,7 +75,10 @@ static int score(const std::string& dir, const std::string& id, int op, const st
     }
     // structure of the result
     bool empty = R.nt() == 0;
-    if (!empty && !tr.closedManifoldAsReturned()) fails.push_back("result is not a closed manifold (as returned, by vertex index)");     // pre-registered bar, amended 2026-11-14: judged as returned, see PLAN.md
+    // Amendments 1 and 3 (PLAN.md): a result passes the structure check if it is a closed manifold as returned (by vertex index), OR it has no boundary edge after identifying coincident
+    // vertices (it may then have an edge or vertex shared by more than two faces: the exact union of two solids that touch along an edge or at a corner is geometrically non-manifold, and
+    // either representation of it is accepted). Open surfaces always fail. The volume and point tests still apply.
+    if (!empty && !(tr.closedManifoldAsReturned() || (!tr.anyOpen && tr.faces > 0))) fails.push_back("result is not closed (it has a boundary edge, also after identifying coincident vertices)");
     if (validInputs && !empty && tr.inverted) fails.push_back("result has negative volume (inverted)");
     if (validInputs && !empty && tr.duplicateTri) fails.push_back("result has a duplicated triangle");
     // point classification
