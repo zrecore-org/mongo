@@ -1,0 +1,82 @@
+--- storage/mesh/mp20/geogram_patched/src_pristine_copy_do_not_edit/src/lib/geogram/mesh/mesh_surface_intersection.cpp	2026-11-13 22:56:29
++++ storage/mesh/mp20/instr/msi_instr.cpp	2026-11-13 23:03:05
+@@ -58,6 +58,9 @@
+ 
+ #include <sstream>
+ #include <stack>
++#include <cstdio>
++#include <set>
++#include <cstdlib>
+ 
+ #ifdef GEO_COMPILER_CLANG
+ // I'm using long long
+@@ -242,9 +245,13 @@
+             }
+         }
+ 
++	if(getenv("MP20_TRACE")){ for(index_t f=0; f<mesh_.facets.nb(); f+=12){ fprintf(stderr,"MP20S 0-before f%u: v%u v%u v%u (%g,%g,%g)\n",f,mesh_.facets.vertex(f,0),mesh_.facets.vertex(f,1),mesh_.facets.vertex(f,2),mesh_.vertices.point(mesh_.facets.vertex(f,0))[0],mesh_.vertices.point(mesh_.facets.vertex(f,0))[1],mesh_.vertices.point(mesh_.facets.vertex(f,0))[2]); } }
+ 	remove_degenerate_triangles(mesh_);
++	if(getenv("MP20_TRACE")){ for(index_t f=0; f<mesh_.facets.nb(); f+=12){ fprintf(stderr,"MP20S 1-after-degen f%u: v%u v%u v%u (%g,%g,%g)\n",f,mesh_.facets.vertex(f,0),mesh_.facets.vertex(f,1),mesh_.facets.vertex(f,2),mesh_.vertices.point(mesh_.facets.vertex(f,0))[0],mesh_.vertices.point(mesh_.facets.vertex(f,0))[1],mesh_.vertices.point(mesh_.facets.vertex(f,0))[2]); } }
+ 	mesh_colocate_vertices_no_check(mesh_);
++	if(getenv("MP20_TRACE")){ for(index_t f=0; f<mesh_.facets.nb(); f+=12){ fprintf(stderr,"MP20S 2-after-colocate f%u: v%u v%u v%u (%g,%g,%g)\n",f,mesh_.facets.vertex(f,0),mesh_.facets.vertex(f,1),mesh_.facets.vertex(f,2),mesh_.vertices.point(mesh_.facets.vertex(f,0))[0],mesh_.vertices.point(mesh_.facets.vertex(f,0))[1],mesh_.vertices.point(mesh_.facets.vertex(f,0))[2]); } }
+ 	mesh_remove_bad_facets_no_check(mesh_);
++	if(getenv("MP20_TRACE")){ for(index_t f=0; f<mesh_.facets.nb(); f+=12){ fprintf(stderr,"MP20S 3-after-badfacets f%u: v%u v%u v%u (%g,%g,%g)\n",f,mesh_.facets.vertex(f,0),mesh_.facets.vertex(f,1),mesh_.facets.vertex(f,2),mesh_.vertices.point(mesh_.facets.vertex(f,0))[0],mesh_.vertices.point(mesh_.facets.vertex(f,0))[1],mesh_.vertices.point(mesh_.facets.vertex(f,0))[2]); } }
+ 
+         // Set symbolic perturbation mode to lexicographic order
+         // on point coordinates instead of point indices only,
+@@ -803,6 +810,7 @@
+         intersect_prologue();
+         vector<IsectInfo> intersections;
+         intersect_get_intersections(intersections);
++        if(getenv("MP20_TRACE")) fprintf(stderr,"MP20I intersections recorded: %u\n",(unsigned)intersections.size());
+         intersect_remesh_intersections(intersections);
+         intersect_epilogue(intersections);
+     }
+@@ -1844,6 +1852,26 @@
+             );
+             if(verbose_) {
+                 Logger::out("Weiler") << "Done." << std::endl;
++            }
++            if(getenv("MP20_TRACE")) {
++                for(index_t c=0;c<nb_components;++c){
++                    index_t v=component_vertex[c]; const vec3& qq=mesh_.vertices.point(v);
++                    index_t nf=0; index_t ob=0; for(index_t f: mesh_.facets) if(facet_component[f]==c){++nf; ob|=operand_bit[f];}
++                    if(getenv("MP20_ALLV")) {
++                        std::set<index_t> seen;
++                        for(index_t f: mesh_.facets) if(facet_component[f]==c) for(index_t w: mesh_.facets.vertices(f)) if(is_original_vertex(w) && seen.insert(w).second) {
++                            bool shared=false; for(index_t g: mesh_.facets) if(facet_component[g]!=c) for(index_t w2: mesh_.facets.vertices(g)) if(w2==w) shared=true;
++                            const vec3& pw=mesh_.vertices.point(w);
++                            index_t save=getenv("MP20_TRACE")?1:0; (void)save;
++                            unsetenv("MP20_TRACE"); index_t b=compute_component_inclusion_bits(c,w); setenv("MP20_TRACE","1",1);
++                            fprintf(stderr,"MP20V comp %u vertex %u (%g,%g,%g) contact=%d bits_from_here=%u\n",c,w,pw.x,pw.y,pw.z,(int)shared,b);
++                        }
++                    }
++                    { index_t ff=NO_INDEX; for(index_t f: mesh_.facets) if(facet_component[f]==c){ff=f;break;}
++                      index_t nb_orig=0, nb_isectv=0; (void)nb_orig; (void)nb_isectv;
++                      fprintf(stderr,"MP20F comp %u first_facet %u corners v%u v%u v%u original_facet_id %u (is_original_facet=%d) total_facets %u\n",c,ff,mesh_.facets.vertex(ff,0),mesh_.facets.vertex(ff,1),mesh_.facets.vertex(ff,2),(unsigned)original_facet_id_[ff],(int)(original_facet_id_[ff]==ff),mesh_.facets.nb()); }
++                    fprintf(stderr,"MP20 comp %u nfacets %u opbits %u rep_vertex %u (%g,%g,%g) original=%d incl_bits=%u maxvolchart=%d vol=%g\n",c,nf,ob,v,qq.x,qq.y,qq.z,(int)is_original_vertex(v),component_inclusion_bits[c],(int)chart_with_max_volume_in_component[c],max_chart_volume_in_component[c]);
++                }
+             }
+         }
+ 
+@@ -1997,9 +2025,19 @@
+ 	    const vec3& p1 = mesh_copy_.facets.point(f,0);
+ 	    const vec3& p2 = mesh_copy_.facets.point(f,1);
+ 	    const vec3& p3 = mesh_copy_.facets.point(f,2);
+-	    if(segment_triangle_intersection_SOS(q1,q2,p1,p2,p3)) {
++	    bool hit = segment_triangle_intersection_SOS(q1,q2,p1,p2,p3);
++	    if(hit) {
+ 		component_inclusion_bits ^= facet_operand_bits;
+ 	    }
++	    if(getenv("MP20_TRACE")) {
++	        Sign r1 = Sign(PCK::orient_3d(q1,p1,p2,p3));
++	        Sign r2 = Sign(PCK::orient_3d(q2,p1,p2,p3));
++	        Sign t1 = Sign(PCK::orient_3d(q1,q2,p1,p2)), t2 = Sign(PCK::orient_3d(q1,q2,p2,p3)), t3 = Sign(PCK::orient_3d(q1,q2,p3,p1));
++	        bool degen = (r1==ZERO||r2==ZERO||t1==ZERO||t2==ZERO||t3==ZERO);
++	        if(hit || degen) {
++	            fprintf(stderr,"MP20   comp %u ray from v%u: facet_copy %u (comp %u, opbit %u) hit=%d rawsigns o1=%d o2=%d s=%d,%d,%d%s  addr q1=%p q2=%p p1=%p\n",component,v,f,facet_component_copy[f],facet_operand_bits,(int)hit,(int)r1,(int)r2,(int)t1,(int)t2,(int)t3,degen?" DEGENERATE":"",(const void*)&q1,(const void*)&q2,(const void*)&p1);
++	        }
++	    }
+ 	}
+         return component_inclusion_bits;
+     }

@@ -1,0 +1,126 @@
+--- a/src/lib/geogram/mesh/mesh_surface_intersection.cpp
++++ b/src/lib/geogram/mesh/mesh_surface_intersection.cpp
+@@ -1834,8 +1834,123 @@
+                                       << " components using ray tracing"
+                                       << std::endl;
+             }
++
++            // MP20 patch. component_vertex[] (the first corner of the
++            // component's first facet) can be a vertex shared with another
++            // component (components that touch at a vertex are not linked by
++            // any intersection, and mesh_colocate_vertices() gave both the
++            // same vertex). A ray started there is decided by the symbolic
++            // perturbation of the ray, not by the geometry. For such
++            // components, the ray is started from the exact centroid of a
++            // facet of the component instead (strictly inside the facet, so it
++            // is never a vertex of any component).
++            vector<index_t> component_interior_facet(nb_components, NO_INDEX);
++            vector<ExactPoint> copy_points; // stable addresses for the SOS
++            {
++                vector<index_t> vertex_owner(mesh_.vertices.nb(), NO_INDEX);
++                vector<char> vertex_shared(mesh_.vertices.nb(), 0);
++                for(index_t f: mesh_.facets) {
++                    index_t c = facet_component[f];
++                    for(index_t w: mesh_.facets.vertices(f)) {
++                        if(vertex_owner[w] == NO_INDEX) {
++                            vertex_owner[w] = c;
++                        } else if(vertex_owner[w] != c) {
++                            vertex_shared[w] = 1;
++                        }
++                    }
++                }
++                vector<index_t> first_facet(nb_components, NO_INDEX);
++                vector<index_t> free_facet(nb_components, NO_INDEX);
++                bool any = false;
++                for(index_t c=0; c<nb_components; ++c) {
++                    any = any || vertex_shared[component_vertex[c]];
++                }
++                if(any) {
++                    for(index_t f: mesh_.facets) {
++                        index_t c = facet_component[f];
++                        if(!vertex_shared[component_vertex[c]]) {
++                            continue;
++                        }
++                        if(first_facet[c] == NO_INDEX) {
++                            first_facet[c] = f;
++                        }
++                        if(free_facet[c] == NO_INDEX) {
++                            bool touches = false;
++                            for(index_t w: mesh_.facets.vertices(f)) {
++                                touches = touches || vertex_shared[w];
++                            }
++                            if(!touches) {
++                                free_facet[c] = f;
++                            }
++                        }
++                    }
++                    for(index_t c=0; c<nb_components; ++c) {
++                        component_interior_facet[c] = (
++                            free_facet[c] != NO_INDEX ?
++                            free_facet[c] : first_facet[c]
++                        );
++                    }
++                    copy_points.reserve(mesh_copy_.vertices.nb());
++                    for(index_t v: mesh_copy_.vertices) {
++                        copy_points.push_back(
++                            ExactPoint(mesh_copy_.vertices.point(v))
++                        );
++                    }
++                }
++            }
++
++            // Same ray casting as compute_component_inclusion_bits_exact(),
++            // starting from the exact centroid of facet f of mesh_.
++            auto inclusion_bits_from_interior = [&](
++                index_t component, index_t f
++            )->index_t {
++                Attribute<index_t> operand_bit_copy(
++                    mesh_copy_.facets.attributes(), "operand_bit"
++                );
++                Attribute<index_t> facet_component_copy(
++                    mesh_copy_.facets.attributes(), "component"
++                );
++                ExactPoint a = exact_vertex(mesh_.facets.vertex(f,0));
++                ExactPoint b = exact_vertex(mesh_.facets.vertex(f,1));
++                ExactPoint c = exact_vertex(mesh_.facets.vertex(f,2));
++                ExactPoint q1(
++                    a.x*b.w*c.w + b.x*a.w*c.w + c.x*a.w*b.w,
++                    a.y*b.w*c.w + b.y*a.w*c.w + c.y*a.w*b.w,
++                    a.z*b.w*c.w + b.z*a.w*c.w + c.z*a.w*b.w,
++                    exact::scalar(3.0)*a.w*b.w*c.w
++                );
++                ExactPoint q2 = q1;
++                q2.z += (q2.w * exact::scalar(1e6));
++                index_t bits = 0;
++                for(index_t g: mesh_copy_.facets) {
++                    if(
++                        facet_component_copy[g] == NO_INDEX ||
++                        facet_component_copy[g] == component
++                    ) {
++                        continue;
++                    }
++                    const ExactPoint& p1 =
++                        copy_points[mesh_copy_.facets.vertex(g,0)];
++                    const ExactPoint& p2 =
++                        copy_points[mesh_copy_.facets.vertex(g,1)];
++                    const ExactPoint& p3 =
++                        copy_points[mesh_copy_.facets.vertex(g,2)];
++                    if(segment_triangle_intersection_SOS(q1,q2,p1,p2,p3)) {
++                        bits ^= operand_bit_copy[g];
++                    }
++                }
++                return bits;
++            };
++
+             parallel_for(
+                 0, nb_components, [&](index_t component) {
++                    if(component_interior_facet[component] != NO_INDEX) {
++                        component_inclusion_bits[component] =
++                            inclusion_bits_from_interior(
++                                component, component_interior_facet[component]
++                            );
++                        return;
++                    }
+                     component_inclusion_bits[component] =
+ 			compute_component_inclusion_bits(
+ 			    component, component_vertex[component]

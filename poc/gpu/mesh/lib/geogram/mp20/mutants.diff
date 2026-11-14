@@ -1,0 +1,50 @@
+--- storage/mesh/mp20/geogram_patched/src/src/lib/geogram/mesh/mesh_surface_intersection.cpp	2026-11-13 23:09:15
++++ storage/mesh/mp20/mutants/m1_revert_interior_choice.cpp	2026-11-13 23:20:31
+@@ -1885,10 +1885,7 @@
+                         }
+                     }
+                     for(index_t c=0; c<nb_components; ++c) {
+-                        component_interior_facet[c] = (
+-                            free_facet[c] != NO_INDEX ?
+-                            free_facet[c] : first_facet[c]
+-                        );
++                        component_interior_facet[c] = NO_INDEX;
+                     }
+                     copy_points.reserve(mesh_copy_.vertices.nb());
+                     for(index_t v: mesh_copy_.vertices) {
+--- storage/mesh/mp20/geogram_patched/src/src/lib/geogram/mesh/mesh_surface_intersection.cpp	2026-11-13 23:09:15
++++ storage/mesh/mp20/mutants/m2_use_contact_vertex.cpp	2026-11-13 23:20:31
+@@ -1913,12 +1913,8 @@
+                 ExactPoint a = exact_vertex(mesh_.facets.vertex(f,0));
+                 ExactPoint b = exact_vertex(mesh_.facets.vertex(f,1));
+                 ExactPoint c = exact_vertex(mesh_.facets.vertex(f,2));
+-                ExactPoint q1(
+-                    a.x*b.w*c.w + b.x*a.w*c.w + c.x*a.w*b.w,
+-                    a.y*b.w*c.w + b.y*a.w*c.w + c.y*a.w*b.w,
+-                    a.z*b.w*c.w + b.z*a.w*c.w + c.z*a.w*b.w,
+-                    exact::scalar(3.0)*a.w*b.w*c.w
+-                );
++                (void)a; (void)b; (void)c;
++                ExactPoint q1 = exact_vertex(component_vertex[component]);
+                 ExactPoint q2 = q1;
+                 q2.z += (q2.w * exact::scalar(1e6));
+                 index_t bits = 0;
+--- storage/mesh/mp20/geogram_patched/src/src/lib/geogram/mesh/mesh_surface_intersection.cpp	2026-11-13 23:09:15
++++ storage/mesh/mp20/mutants/m3_edge_midpoint.cpp	2026-11-13 23:20:31
+@@ -1913,11 +1913,12 @@
+                 ExactPoint a = exact_vertex(mesh_.facets.vertex(f,0));
+                 ExactPoint b = exact_vertex(mesh_.facets.vertex(f,1));
+                 ExactPoint c = exact_vertex(mesh_.facets.vertex(f,2));
++                (void)c;
+                 ExactPoint q1(
+-                    a.x*b.w*c.w + b.x*a.w*c.w + c.x*a.w*b.w,
+-                    a.y*b.w*c.w + b.y*a.w*c.w + c.y*a.w*b.w,
+-                    a.z*b.w*c.w + b.z*a.w*c.w + c.z*a.w*b.w,
+-                    exact::scalar(3.0)*a.w*b.w*c.w
++                    a.x*b.w + b.x*a.w,
++                    a.y*b.w + b.y*a.w,
++                    a.z*b.w + b.z*a.w,
++                    exact::scalar(2.0)*a.w*b.w
+                 );
+                 ExactPoint q2 = q1;
+                 q2.z += (q2.w * exact::scalar(1e6));

@@ -1,0 +1,90 @@
+== (a1) compiled translation units: compile_commands.json entries
+147
+== (a2) grep restricted directories in compile_commands.json (third_party/(tetgen|triangle|HLBFGS)/), expect empty:
+[matches: 0]
+== (a3) same grep over the ninja -v log (any mention of those directories), expect 0:
+0
+== (a4) every .c/.cpp whose path contains tetgen, triangle or hlbfgs (case-insensitive, whole path):
+src/lib/geogram/mesh/triangle_intersection.cpp
+src/lib/geogram/delaunay/delaunay_tetgen.cpp
+src/lib/geogram/delaunay/delaunay_triangle.cpp
+== (a5) restricted source files that exist in the checkout but are not in the build:
+tetgen/tetgen.cpp
+triangle/triangle.c
+HLBFGS/HLBFGS_BLAS.cpp
+HLBFGS/HLBFGS.cpp
+HLBFGS/ICFS.cpp
+HLBFGS/LineSearch.cpp
+HLBFGS/Lite_Sparse_Matrix.cpp
+== (a6) archive members of libgeogram.a whose name matches tetgen|triangle|hlbfgs:
+triangle_intersection.cpp.o
+delaunay_tetgen.cpp.o
+delaunay_triangle.cpp.o
+== (b) nm on /Volumes/CrucialX9/Projects/mongo/storage/mesh/mp20/geogram_patched/build/lib/libgeogram.a
+   26717
+-- (b1) lines matching 'tetgen|hlbfgs' (case-insens), mangled and demangled:
+/Volumes/CrucialX9/Projects/mongo/storage/mesh/mp20/geogram_patched/build/lib/libgeogram.a:delaunay_tetgen.cpp.o: 0000000000000000 D _dummy_delaunay_tetgen_compiled
+/Volumes/CrucialX9/Projects/mongo/storage/mesh/mp20/geogram_patched/build/lib/libgeogram.a:delaunay_tetgen.cpp.o: 0000000000000000 t ltmp0
+/Volumes/CrucialX9/Projects/mongo/storage/mesh/mp20/geogram_patched/build/lib/libgeogram.a:delaunay_tetgen.cpp.o: 0000000000000000 d ltmp1
+3
+-- (b2) lines matching 'triangle' (case-insens): count
+353
+-- (b3) symbols that belong to the restricted libraries' own APIs (TetGen: tetgenio tetgenbehavior tetgenmesh tetrahedralize; Triangle: triangulateio, global triangulate/trifree/triunsuitable/exactinit; HLBFGS: HLBFGS INIT_HLBFGS HLBFGS_UPDATE_Hessian ICFS Lite_Sparse_Matrix), count:
+       0
+== (b) nm on /Volumes/CrucialX9/Projects/mongo/storage/mesh/mp20/geogram_patched/bin/geogram_runner
+    9992
+-- (b1) lines matching 'tetgen|hlbfgs' (case-insens), mangled and demangled:
+0
+-- (b2) lines matching 'triangle' (case-insens): count
+200
+-- (b3) symbols that belong to the restricted libraries' own APIs (TetGen: tetgenio tetgenbehavior tetgenmesh tetrahedralize; Triangle: triangulateio, global triangulate/trifree/triunsuitable/exactinit; HLBFGS: HLBFGS INIT_HLBFGS HLBFGS_UPDATE_Hessian ICFS Lite_Sparse_Matrix), count:
+       0
+== (b) nm on /Volumes/CrucialX9/Projects/mongo/storage/mesh/mp20/geogram_patched/bin/geogram_probe
+       0
+-- (b1) lines matching 'tetgen|hlbfgs' (case-insens), mangled and demangled:
+0
+-- (b2) lines matching 'triangle' (case-insens): count
+0
+-- (b3) symbols that belong to the restricted libraries' own APIs (TetGen: tetgenio tetgenbehavior tetgenmesh tetrahedralize; Triangle: triangulateio, global triangulate/trifree/triunsuitable/exactinit; HLBFGS: HLBFGS INIT_HLBFGS HLBFGS_UPDATE_Hessian ICFS Lite_Sparse_Matrix), count:
+       0
+-- (b4) the 'triangle' matches that are NOT in a GEO:: or Geogram-internal name (demangled; head):
+               U ___cxa_allocate_exception
+               U ___cxa_free_exception
+               U ___cxa_throw
+               U ___gxx_personality_v0
+               U ___stack_chk_fail
+               U ___stack_chk_guard
+               U __Unwind_Resume
+               U _memmove
+               U _strlen
+               U operator delete(void*)
+               U operator new(unsigned long)
+               U std::length_error::~length_error()
+               U std::logic_error::logic_error(char const*)
+               U typeinfo for std::length_error
+               U VBW::ConvexCell::connect_triangles()
+               U vtable for std::length_error
+(anonymous namespace)::Co3NeManifoldExtraction::flip_triangle(unsigned int)
+(anonymous namespace)::RVD_Nd_Impl<100u>::GetConnectedComponentsPrimalTriangles::~GetConnectedComponentsPrimalTriangles()
+(anonymous namespace)::RVD_Nd_Impl<100u>::GetConnectedComponentsPrimalTriangles::end_connected_component()
+(anonymous namespace)::RVD_Nd_Impl<100u>::GetConnectedComponentsPrimalTriangles::UNINITIALIZED
+(anonymous namespace)::RVD_Nd_Impl<20u>::GetConnectedComponentsPrimalTriangles::~GetConnectedComponentsPrimalTriangles()
+(anonymous namespace)::RVD_Nd_Impl<20u>::GetConnectedComponentsPrimalTriangles::end_connected_component()
+(anonymous namespace)::RVD_Nd_Impl<20u>::GetConnectedComponentsPrimalTriangles::UNINITIALIZED
+(anonymous namespace)::RVD_Nd_Impl<2u>::GetConnectedComponentsPrimalTriangles::~GetConnectedComponentsPrimalTriangles()
+(anonymous namespace)::RVD_Nd_Impl<2u>::GetConnectedComponentsPrimalTriangles::end_connected_component()
+(anonymous namespace)::RVD_Nd_Impl<2u>::GetConnectedComponentsPrimalTriangles::UNINITIALIZED
+(anonymous namespace)::RVD_Nd_Impl<3u>::GetConnectedComponentsPrimalTriangles::~GetConnectedComponentsPrimalTriangles()
+(anonymous namespace)::RVD_Nd_Impl<3u>::GetConnectedComponentsPrimalTriangles::end_connected_component()
+(anonymous namespace)::RVD_Nd_Impl<3u>::GetConnectedComponentsPrimalTriangles::UNINITIALIZED
+(anonymous namespace)::RVD_Nd_Impl<4u>::GetConnectedComponentsPrimalTriangles::~GetConnectedComponentsPrimalTriangles()
+(anonymous namespace)::RVD_Nd_Impl<4u>::GetConnectedComponentsPrimalTriangles::end_connected_component()
+(anonymous namespace)::RVD_Nd_Impl<4u>::GetConnectedComponentsPrimalTriangles::UNINITIALIZED
+(anonymous namespace)::RVD_Nd_Impl<6u>::GetConnectedComponentsPrimalTriangles::~GetConnectedComponentsPrimalTriangles()
+(anonymous namespace)::RVD_Nd_Impl<6u>::GetConnectedComponentsPrimalTriangles::end_connected_component()
+(anonymous namespace)::RVD_Nd_Impl<6u>::GetConnectedComponentsPrimalTriangles::UNINITIALIZED
+(anonymous namespace)::RVD_Nd_Impl<8u>::GetConnectedComponentsPrimalTriangles::~GetConnectedComponentsPrimalTriangles()
+(anonymous namespace)::RVD_Nd_Impl<8u>::GetConnectedComponentsPrimalTriangles::end_connected_component()
+(anonymous namespace)::RVD_Nd_Impl<8u>::GetConnectedComponentsPrimalTriangles::UNINITIALIZED
+(anonymous namespace)::TriangleTriangleIntersection::compute()
+bool std::__1::__insertion_sort_incomplete[abi:nqe220106]<std::__1::_ClassicAlgPolicy, (anonymous namespace)::CompareTriangles&, unsigned int*>(unsigned int*, unsigned int*, (anonymous namespace)::CompareTriangles&)

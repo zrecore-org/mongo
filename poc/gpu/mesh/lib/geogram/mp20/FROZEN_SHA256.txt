@@ -1,0 +1,5 @@
+FROZEN 2026-11-14T07:20:16Z before gen_touch_set4.cpp was written (file does not exist at this time: ls: poc/gpu/mesh/corpus/touch/gen_touch_set4.cpp: No such file or directory)
+4074ad1ff1314179335d1a2d89225496dfa4ff23a0ac4c6564454592757e92e4  geogram_mp20.patch
+bc6b3d367707374821e0ab980f62b9a45a2693edb022746c5d515bab71732714  patched mesh_surface_intersection.cpp (in storage/mesh/mp20/geogram_patched)
+facff4cf02990f94432b8ba92725977cce8475bd9013bfa85cf778a3f3c9eb24  pristine v1.10.1 (bbcacba) mesh_surface_intersection.cpp
+ada93ba0a5e03fb349f47b2d12112b039cb041f632379f766bbc40e67654a53b  patched geogram_runner binary

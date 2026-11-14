@@ -678,6 +678,9 @@ Geogram v1.10.1 and `main` fail only vertex contact (24 of 240 rows in the 80-pa
 ### Cherchi et al. 2022 (indirect predicates): licence check only, not scored
 MIT repo, but the required Attene `Indirect_Predicates` headers are LGPL-3.0-or-later (verified in the header). Not permissive under the plan's no-GPL rule; left unscored and recorded (`mesh/LICENSES.md`).
 
+### MP20: local patch of Geogram v1.10.1 for vertex-contact classification (`mesh/lib/geogram/mp20/REPORT.md`): **acceptance set passed (set 4: 3150 rows, 0 FAIL, 0 REFUSED, unpatched 360 FAIL)**
+Mechanism (verified): contact-only components are classified by one ray from the component's start vertex; when that is the shared contact vertex the tie is broken by `orient_3d_SOS` by pointer order, not geometry. The 126-line patch (frozen and hashed before set 4 existed) starts the ray from an exact facet centroid for components whose start vertex is shared. Dev sets 0 FAIL; 63/63 byte-identical; median time -0.18%; mutants caught (the edge-midpoint mutant is equivalent on these families). Not yet shown: x86_64 and Linux behaviour (the unpatched tie-break depends on address order, observed on arm64 macOS only), curved-curved contact (no unpatched failures there), and the huge-offset failures (re-centring).
+
 ### Wave 0 status
 Done locally: MP01, MP02 and MP06 meet the Wave 0 criteria on this machine (corpus byte-reproducible, every planted mutant caught, predicate oracles agree at 1e7, every SFCGAL function has a parity row).
 **Cross-architecture corpus agreement:** aarch64 matched on the first run; x86_64 differed in one file because of an unspecified argument-evaluation order in the generator (fixed, see MP01); the re-run on x86_64 is pending.
