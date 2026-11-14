@@ -81,6 +81,7 @@ MP14 BSON representation, 3D bounding-box index simulation (100% recall), runtim
 ## Resource rules
 - M1 only through `tools/with_gpu_lock.sh`. Lavapipe (x86_64 and aarch64) runs the suite in CI at no cost. T4 only at gates, through `tools/t4_ci_turn.sh`, after the lavapipe job passes; `[skip gpu]` on commits that do not need it.
 - Sub-agents for CPU-only independent work (parity and license work, library build and API-fit steps, survey halves, corpus scripts). Shader work stays in the main thread. Advisor before each gate and before each wave starts.
+- **Large files go to `./storage` (external volume, ignored by git), never the internal disk** (it has about 12 GiB free): Thingi10K, big generated sets, downloaded libraries and their build trees when large, and Bazel's caches (`. poc/gpu/tools/storage_env.sh`, then `bz build ...`). Small generated files stay in `poc/gpu/build/`.
 - No push without asking; commit locally to `vulkan-gpu`.
 
 ## Out of scope

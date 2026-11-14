@@ -7,7 +7,7 @@ writes `poc/gpu/build/corpus/` and checks it. The only committed corpus artifact
 - `primitives/`: unit box, icospheres (subdivision 0 to 5, 20 to 20,480 triangles), a spiky non-convex star, tori (8x4 and 32x16 segments) and a flat grid (an open surface).
 - `adversarial/<id>_A.msh`, `<id>_B.msh` plus `manifest.tsv` (31 cases). Classes: identical, touch (face, partial face, edge, vertex, on top of a face), nested, overlap, coplanar overlap, sliver (2^-40 thick), perturbed (shifts of 2^-20, 2^-40, 2^-52 and a one-ulp gap), huge offset (2^40, including a one-ulp shift), curved pairs (sphere/star/torus/tangent box),
   and malformed operands: open box, non-manifold edge (welded), self-intersecting, unwelded vertices, zero-area triangle, inverted, duplicate triangle.
-- `sets/many_small_<N>.mshc`: N meshes of 80 to 1,280 triangles at deterministic positions and scales (the many-small workload; default N = 1000, the canonical corpus uses 200). `gen_corpus ... --large` adds icospheres of 1.3M and 5.2M triangles (the few-large workload).
+- `sets/many_small_<N>.mshc`: N meshes of 80 to 1,280 triangles at deterministic positions and scales (the many-small workload; default N = 1000, the canonical corpus uses 200). `gen_corpus ... --large` adds icospheres of 1.3M and 5.2M triangles (the few-large workload; hundreds of MB, so write it to `./storage`, e.g. `gen_corpus ./storage/mesh/corpus_large --large --many 100000`, not to the default `build/`).
 
 ## Manifest columns
 `id class tags nvA ntA nvB ntB vol6_A vol6_B vol6_union vol6_inter vol6_diff`. Volumes are **6 x volume as an exact integer times a power of two** (`num*2^exp`), so no
@@ -22,7 +22,7 @@ volume of the mesh triangles). For non-box pairs, only identical pairs have expe
 - The checker has already found a defect in the generator once: the first "non-manifold edge" case merged two boxes without identifying their coincident vertices, so no edge had more than two faces; the case now welds the shared vertices.
 
 ## Thingi10K (not fetched yet)
-`fetch_thingi.sh --yes-download-9GB` downloads the raw archive and verifies it against `THINGI.pin`. The pin (repo commit `2d5d3b2f3cd3711028ad75b12788c13b25559ec6`, size 9,616,033,688 bytes, sha256 `9d943391...`) was read from the Hugging Face response headers; the archive has not been downloaded, so the hash is as reported by the host and unverified until the first fetch.
+`fetch_thingi.sh --yes-download-9GB` downloads the raw archive into `./storage/thingi10k_raw/` (external volume, ignored by git) and verifies it against `THINGI.pin`. The pin (repo commit `2d5d3b2f3cd3711028ad75b12788c13b25559ec6`, size 9,616,033,688 bytes, sha256 `9d943391...`) was read from the Hugging Face response headers; the archive has not been downloaded, so the hash is as reported by the host and unverified until the first fetch.
 Licensing: the dataset's organizing code is Apache-2.0; "each thing in the dataset has its own license" (field `license` per entry; the dataset lists 10 licenses). Fetched only, never committed, local testing only; filter by license before using any model for anything else.
 Next steps for it (Wave 1): an STL reader with exact-coordinate vertex welding into `.msh`, a per-model validity tag (closed, manifold, self-intersecting) computed with the exact tools, and a license manifest.
 Source: <https://github.com/Thingi10K/Thingi10K>.

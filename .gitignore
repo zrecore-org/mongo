@@ -376,3 +376,6 @@ target
 .claude/agent-memory-local/
 .claude/worktrees/
 CLAUDE.local.md
+
+# Large files (downloads, Bazel caches, big generated meshes) live on the external volume in ./storage and are never tracked
+/storage/
