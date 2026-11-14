@@ -1,0 +1,11 @@
+Delaunay::create(3,"tetgen") -> ok, dynamic type N3GEO25Delaunay_NearestNeighborsE
+Delaunay::create(2,"triangle") -> ok, dynamic type N3GEO25Delaunay_NearestNeighborsE
+Delaunay::create(3,"BDEL") -> ok, dynamic type N3GEO10Delaunay3dE
+Delaunay::create(3,"PDEL") -> ok, dynamic type N3GEO18ParallelDelaunay3dE
+Delaunay::create(2,"BDEL2d") -> ok, dynamic type N3GEO10Delaunay2dE
+Optimizer::create("HLBFGS") -> null (unavailable)
+AABB contains(0.5,0.5,0.5)=1 contains(2,2,2)=0 squared_distance(2,0.5,0.5)=1
+compute_convex_hull_3d ok: facets=4 enclosed_volume=0.166667
+mesh_tetrahedralize returned 0 cells=0
+remesh_smooth ok: out facets=96
+mesh_decimate_vertex_clustering ok: facets=12
