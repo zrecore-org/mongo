@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // df64: an unevaluated sum hi+lo of two float32s (~48 mantissa bits).
 // PREC expands to `precise` (SPIR-V NoContraction) or nothing, so the same source gives both variants.
 #ifdef NOPRECISE

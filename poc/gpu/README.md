@@ -90,4 +90,10 @@ This directory is part of the MongoDB source tree and, unless a file says otherw
 repository's license, the Server Side Public License v1 (`LICENSE-Community.txt` at the repository root). The
 files here do not yet carry per-file SPDX headers; add them before any of this moves under `src/`.
 
+Exception (decided by the owner, 2026-11-15): the shaders in `shaders/` carry `SPDX-License-Identifier: Apache-2.0` and the
+line `Copyright 2026 zrecore-org and exactmesh contributors`, so that they can be shared with `zrecore-org/pg-strom` and
+`zrecore-org/exactmesh`. Not relabelled: `shaders/f64soft.inc` and `shaders/softsum.comp`, which reimplement
+`mongo::DoubleDoubleSummation::addDouble` from `src/mongo/util/summation.h` (SSPL) and stay under the repository license
+until an owner decides otherwise. Host code (`*.cpp`) is not relabelled yet.
+
 Parts of this work were written with the assistance of Claude (Anthropic), as recorded in the commit trailers.

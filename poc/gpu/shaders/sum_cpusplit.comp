@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 #version 450
 #include "sum_common.glsl"
 layout(std430, binding = 0) readonly buffer In { vec2 x[]; };  // (hi, lo) float pairs, split on the CPU

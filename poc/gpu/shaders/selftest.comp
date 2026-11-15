@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 #version 450
 #extension GL_GOOGLE_include_directive : require
 // Startup known-answer probes (POC 8). op 0: fma on two floats, op 1: twoProd (fma or Dekker, per NOFMA),

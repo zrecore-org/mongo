@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // Double (raw IEEE bits) -> df64 using only 32-bit integer and float ops. Needs df64_ops.glsl.
 // Exact-ish double -> df64 conversion from the raw bits, using only 32-bit integer and float ops.
 // Sets `bad` for NaN/Inf/denormal and for exponents outside [-99, 99] (the df64-safe range).

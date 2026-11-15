@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 #version 450
 // Radix sort pass, step 2: exclusive scan of the 16*B digit-major block histogram, in one workgroup.
 layout(local_size_x = 256) in;

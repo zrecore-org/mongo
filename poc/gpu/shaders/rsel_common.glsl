@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // GPU radix select (k-th smallest of n doubles) using only 32-bit integer ops. Doubles are mapped to an
 // order-preserving 64-bit key; each of 8 passes histograms one byte of the keys that still match the
 // prefix chosen so far, and a tiny kernel picks the byte holding the wanted rank. No float math, so the

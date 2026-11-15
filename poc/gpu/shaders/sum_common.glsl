@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // Shared by the POC 2 segmented-sum kernels. Each thread keeps GROUPS private df64 accumulators
 // (grid-stride loop), then the workgroup tree-reduces each group. The host combines the per-workgroup
 // partials with DoubleDoubleSummation semantics. No float atomics are needed, so results are deterministic

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 #version 450
 layout(local_size_x = 64) in;
 layout(std430, binding = 0) readonly buffer A { float a[]; };

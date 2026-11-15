@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 #version 450
 // POC 9 pass 2: per group, sum of (x - mean)^2 in df64. The mean comes from pass 1 (the `$sum` kernel) via the host,
 // so every partial is relative to the global mean and the partials just add; no Chan merge correction is needed.

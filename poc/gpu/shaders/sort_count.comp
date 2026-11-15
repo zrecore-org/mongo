@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 #version 450
 // Radix sort pass, step 1: per-block histogram of one 4-bit digit. Block = 256 threads x 16 consecutive keys.
 layout(local_size_x = 256) in;

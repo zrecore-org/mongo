@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 #version 450
 // Radix sort pass, step 3: stable scatter. Output position = global offset of (digit, block) + number of
 // same-digit keys in earlier threads of this block + earlier same-digit keys of this thread.
