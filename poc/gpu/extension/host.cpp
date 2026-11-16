@@ -5,11 +5,11 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
+#include "platform_compat.h"
 #ifdef _WIN32
 #include <psapi.h>
 #endif
 #include <cstring>
-#include "platform_compat.h"
 #include "mongo/db/extension/public/api.h"
 
 #include "bson_min.h"
@@ -150,7 +150,7 @@ const MongoExtensionHostPortalVTable HPortal::vt = {
 
 // ------------------------------------------------------------------ loading: mirrors host/load_extension.cpp (negotiateExtensionVersion, selectCompatibleVersion, getMongoExtension)
 struct ExtLib {
-    void* h = nullptr;
+    pc::Lib h = nullptr;
     string path, error, stageName;
     MongoExtensionAPIVersion negotiated{0, 0};
     vector<MongoExtensionAPIVersion> advertised;
