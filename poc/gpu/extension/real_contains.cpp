@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
     exactinit();
     if (argc < 2) { std::printf("usage: real_contains <list> [threads]\n"); return 2; }
     unsigned T = argc > 2 ? (unsigned)atoi(argv[2]) : std::max(1u, std::thread::hardware_concurrency() / 2);
+    const std::string dump = argc > 3 ? argv[3] : "";   // optional: write <id>.mesh (packed MSH1), <id>.pts (n*3 binary64 LE) and <id>.exp (one char O/I/B per point) for the mongod test
     std::ifstream in(argv[1]); std::string path;
     long total = 0, bad = 0, on = 0, nin = 0, nout = 0; uint64_t h = 1469598103934665603ull; int models = 0;
     while (std::getline(in, path)) {
@@ -46,6 +47,11 @@ int main(int argc, char** argv) {
             }
         });
         for (auto& t : th) t.join();
+        if (!dump.empty()) {
+            FILE* f = fopen((dump + "/" + id + ".mesh").c_str(), "wb"); mesh::writeRecord(f, c.m); fclose(f);
+            f = fopen((dump + "/" + id + ".pts").c_str(), "wb"); fwrite(q.data(), 8, q.size(), f); fclose(f);
+            f = fopen((dump + "/" + id + ".exp").c_str(), "wb"); for (size_t i = 0; i < n; i++) fputc(ref[i] == 2 ? 'B' : ref[i] == 1 ? 'I' : 'O', f); fclose(f);
+        }
         long mb = 0;
         for (size_t i = 0; i < n; i++) { mb += mine[i] != ref[i]; h ^= ref[i]; h *= 1099511628211ull; (ref[i] == 2 ? on : ref[i] == 1 ? nin : nout)++; }
         total += (long)n; bad += mb; models++;

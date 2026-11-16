@@ -860,6 +860,49 @@ int runContainsTests(const string& dir) {
     vector<string> many; string onePt = pointsArray({0.5, 0.5, 0.5}); for (int i = 0; i < 200; i++) many.push_back(containsDocOf(i, packMesh(bx), &onePt, nullptr));
     auto rb = runContains(L, spec([](bm::Builder& b) { b.i32("batchSize", 1000); }), many);
     chk("200 documents, 200 results in order", rb.ok && rb.docs.size() == 200);
+    // input contract (review of 2026-11-16): coordinate types, NaN/Inf, empty arrays, -0.0
+    {
+        auto docWithPoints = [&](int id, const std::function<void(bm::Builder&)>& pts) { bm::Builder b; b.i32("_id", id); b.bin("mesh", packMesh(bx).data(), packMesh(bx).size()); b.head(bm::kArray, "points"); bm::Builder a; pts(a); b.b.append(a.finish()); return b.finish(); };
+        auto point = [](bm::Builder& a, const char* idx, const std::function<void(bm::Builder&)>& coords) { bm::Builder one; coords(one); a.head(bm::kArray, idx); a.b.append(one.finish()); };
+        vector<string> cd = {
+            docWithPoints(30, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.i32("0", 0).i32("1", 0).i32("2", 0); }); }),                                       // int32 vertex of the box: ON
+            docWithPoints(31, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.i64("0", 1).i64("1", 1).i64("2", 1); }); }),                                       // int64 small: ON (corner)
+            docWithPoints(32, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.i64("0", (1LL << 53) + 1).i64("1", 0).i64("2", 0); }); }),                       // int64 not representable: error 15
+            docWithPoints(33, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.dbl("0", std::nan("")).dbl("1", 0).dbl("2", 0); }); }),                          // NaN: error 15
+            docWithPoints(34, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.dbl("0", INFINITY).dbl("1", 0).dbl("2", 0); }); }),                              // Inf: error 15
+            docWithPoints(35, [&](bm::Builder& a) { (void)a; }),                                                                                                         // empty points array: valid, empty verdict string
+            docWithPoints(36, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.dbl("0", -0.0).dbl("1", 0.5).dbl("2", 0.5); }); }),                             // -0.0 on the x=0 face: ON
+            docWithPoints(37, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.dbl("0", 0.5).dbl("1", 0.5).dbl("2", 0.5).dbl("3", 0.5); }); }),               // 4 coordinates: error 15
+            docWithPoints(38, [&](bm::Builder& a) { point(a, "0", [](bm::Builder& o) { o.str("0", "x").dbl("1", 0).dbl("2", 0); }); }),                                   // string coordinate: error 15
+        };
+        string nanBin(24, 0); { double nn = std::nan(""); std::memcpy(&nanBin[0], &nn, 8); }
+        cd.push_back(containsDocOf(39, packMesh(bx), nullptr, &nanBin));                                                                                                // NaN in BinData: error 7
+        auto rc = runContains(L, spec([](bm::Builder&) {}), cd);
+        chk("input contract: pipeline runs", rc.ok && rc.docs.size() == cd.size());
+        if (rc.ok && rc.docs.size() == cd.size()) {
+            vector<string> got; vector<int> ecs;
+            for (auto& d : rc.docs) { int ec; got.push_back(outStr(d, "contains", &ec)); ecs.push_back(ec); }
+            chk("int32 coordinates accepted (vertex: B)", ecs[0] == 0 && got[0] == "B", got[0]);
+            chk("int64 coordinates accepted (corner: B)", ecs[1] == 0 && got[1] == "B", got[1]);
+            chk("int64 beyond 2^53 rejected (15)", ecs[2] == 15);
+            chk("NaN as double rejected (15)", ecs[3] == 15);
+            chk("Inf as double rejected (15)", ecs[4] == 15);
+            chk("empty points array gives an empty verdict string", ecs[5] == 0 && got[5].empty());
+            chk("-0.0 coordinate on the x=0 face: B", ecs[6] == 0 && got[6] == "B", got[6]);
+            chk("4 coordinates rejected (15)", ecs[7] == 15);
+            chk("string coordinate rejected (15)", ecs[8] == 15);
+            chk("NaN in BinData points rejected (7)", ecs[9] == 7);
+        }
+    }
+    // interrupt polling inside one big document: 600k points against a 20k-triangle sphere with a deadline 150 ms away must stop with the deadline status long before the work is done
+    {
+        mesh::Mesh big = uvSphere(100, 200, 1.0, 0, 0, 0); vector<double> many; std::mt19937_64 g(5);
+        for (int i = 0; i < 600000; i++) { many.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.5); many.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.5); many.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.5); }
+        string manyBin(reinterpret_cast<const char*>(many.data()), many.size() * 8);
+        HostCtx ctx; ctx.deadlineMs = nowMs() + 150;
+        auto rd = runPipeline(L, stageBsonContains(spec([](bm::Builder&) {})), {containsDocOf(1, packMesh(big), nullptr, &manyBin)}, ctx, L.descContains);
+        chk("deadline inside one document: stops with status 50 after the deadline, not after the whole batch", !rd.ok && rd.err.code == 50 && rd.ms < 2500, "elapsedMs=" + std::to_string((long)rd.ms) + " code=" + std::to_string(rd.err.code));
+    }
     // stage options and name mismatch
     auto rs = runContains(L, spec([](bm::Builder& b) { b.str("points", "pts"); b.str("output", "verdict"); }), {[&] { bm::Builder b; b.i32("_id", 1); b.bin("mesh", packMesh(bx).data(), packMesh(bx).size()); b.head(bm::kArray, "pts"); b.b.append(onePt); return b.finish(); }()});
     { int ec; chk("custom points and output field names", rs.ok && rs.docs.size() == 1 && outStr(rs.docs[0], "verdict", &ec) == "I"); }

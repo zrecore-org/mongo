@@ -263,7 +263,8 @@ int readPoints(const bm::Elem& e, std::vector<double>* out) {
     return meshvol::kOk;
 }
 // CPU path: exact verdicts for every point. This is the default and the oracle for any other path.
-void containsCpu(const meshvol::Packed& m, const std::vector<double>& pts, string* verdicts) {
+// Returns false if cancelled (deadline or kill, polled every 256 points) before all points were done.
+bool containsCpu(const meshvol::Packed& m, const std::vector<double>& pts, string* verdicts, bool (*cancel)(void*), void* cancelArg) {
     const size_t n = pts.size() / 3;
     verdicts->resize(n);
     meshcontains::Bvh bvh;
@@ -271,24 +272,26 @@ void containsCpu(const meshvol::Packed& m, const std::vector<double>& pts, strin
     if (useBvh) bvh.build(m.v, m.t);
     std::vector<uint32_t> scratch;
     for (size_t i = 0; i < n; i++) {
+        if ((i & 255) == 255 && cancel(cancelArg)) return false;
         const auto v = useBvh ? meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch) : meshcontains::classify(m.v, m.t, &pts[3 * i]);
         (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
     }
+    return true;
 }
-void containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o) {
-    if (!bm::validateDoc(d, len)) { o.code = meshvol::kBadDocument; return; }
+bool containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o, bool (*cancel)(void*), void* cancelArg) {
+    if (!bm::validateDoc(d, len)) { o.code = meshvol::kBadDocument; return true; }
     bm::Elem e;
-    if (!bm::findField(d, len, spec.input, &e)) { o.code = meshvol::kMissingField; return; }
-    if (e.type != bm::kBinData) { o.code = meshvol::kNotBinData; return; }
-    if (e.val[4] != 0) { o.code = meshvol::kBadSubtype; return; }
+    if (!bm::findField(d, len, spec.input, &e)) { o.code = meshvol::kMissingField; return true; }
+    if (e.type != bm::kBinData) { o.code = meshvol::kNotBinData; return true; }
+    if (e.val[4] != 0) { o.code = meshvol::kBadSubtype; return true; }
     meshvol::Packed m;
-    if ((o.code = meshvol::parsePacked(e.val + 5, e.vlen - 5, &m)) != meshvol::kOk) return;
-    if ((o.code = meshvol::checkClosed(m)) != meshvol::kOk) return;
+    if ((o.code = meshvol::parsePacked(e.val + 5, e.vlen - 5, &m)) != meshvol::kOk) return true;
+    if ((o.code = meshvol::checkClosed(m)) != meshvol::kOk) return true;
     bm::Elem pe;
-    if (!bm::findField(d, len, spec.points, &pe)) { o.code = meshvol::kMissingField; return; }
+    if (!bm::findField(d, len, spec.points, &pe)) { o.code = meshvol::kMissingField; return true; }
     std::vector<double> pts;
-    if ((o.code = readPoints(pe, &pts)) != meshvol::kOk) return;
-    containsCpu(m, pts, &o.verdicts);
+    if ((o.code = readPoints(pe, &pts)) != meshvol::kOk) return true;
+    return containsCpu(m, pts, &o.verdicts, cancel, cancelArg);
 }
 
 // Returns false if cancelled (deadline or kill) before every document was done.
@@ -313,7 +316,7 @@ bool computeBatch(const Spec& spec, const DocIn* in, size_t n, DocOut* out, Canc
     for (size_t i = 0; i < n; i++) {
         if ((i & 15) == 0 && cancel(cancelArg)) return false;
         DocOut& o = out[i];
-        if (spec.contains) { containsDoc(spec, in[i].data, in[i].len, o); continue; }
+        if (spec.contains) { if (!containsDoc(spec, in[i].data, in[i].len, o, cancel, cancelArg)) return false; continue; }
         if (!bm::validateDoc(in[i].data, in[i].len)) { o.code = meshvol::kBadDocument; continue; }
         bm::Elem e;
         if (!bm::findField(in[i].data, in[i].len, spec.input, &e)) { o.code = meshvol::kMissingField; continue; }

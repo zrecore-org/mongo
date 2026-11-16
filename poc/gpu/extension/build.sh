@@ -8,7 +8,7 @@ mkdir -p "$OUT/inc/mongo/db/extension"
 ln -sfn "$R/src/mongo/db/extension/public" "$OUT/inc/mongo/db/extension/public"   # public API headers by symlink; nothing under src/ is changed
 BOOST=$("$HERE/boost_inc.sh")
 VKH=/Volumes/CrucialX9/Projects/exactmesh/build/deps/Vulkan-Headers-1.3.283/include   # read only, pinned by exactmesh/third_party/fetch.sh
-COMMON="-std=c++20 -O2 -Wall -Wextra -Wno-unused-const-variable -Wno-unused-function -I$HERE/stub_inc -I$OUT/inc -I$HERE"
+COMMON="-std=c++20 -O2 -ffp-contract=off -Wall -Wextra -Wno-unused-const-variable -Wno-unused-function -I$HERE/stub_inc -I$OUT/inc -I$HERE"
 EXT="$COMMON -fPIC -fvisibility=hidden -fvisibility-inlines-hidden $BOOST -dynamiclib -Wl,-exported_symbols_list,$HERE/exports.list"
 t() { [ $# -eq 0 ] || echo "$TARGETS" | grep -qw "$1"; }
 TARGETS="${*:-all}"
