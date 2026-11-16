@@ -122,3 +122,11 @@ Windows loader work in the fork, from reading the code:
 - `signature_validator.cpp`: POSIX-only (`unistd.h`, `fstat`, `geteuid`, `S_ISREG`, `/proc/self/fd`). With signature validation skipped (insecure build, no public key path) it returns the plain path, so a Windows insecure build can skip it; secure mode is out of scope.
 - `.so` suffix and `SharedLibrary::create` path handling need a check on Windows (`.dll`).
 - None of this can be compiled on the M1; it needs the Windows Bazel build (step 3), so edits wait for a build that can check them.
+
+### MP16 step 3 prerequisites, measured on the Windows machine (aalbino-1b, 2026-11-16, read-only, nothing changed)
+- Python: none (Store stubs only). Bazel/bazelisk, ninja, clang, gh: none.
+- Visual Studio 2022 Community 17.10.3 at D:\VS2022\Community; MSVC 14.40.33807, SDK 10.0.22621.0. The repo's .bazelrc pins Professional 17.14.
+- LongPathsEnabled = 0.
+- C: NTFS, 16.9 GB free (too small for a Bazel tree). D: exFAT, 676 GB free (no symlinks or hardlinks, so a Bazel output base there is a risk). No other NTFS volume.
+- git 2.45.2; system core.symlinks=false; this user lacks SeCreateSymbolicLinkPrivilege and Developer Mode is off, so symlinks on C: fail non-elevated.
+Blockers all need the Windows user's approval: an NTFS VHDX on D:, long paths, installing Python and Bazel, a .bazelrc.local override for VS 17.10, VS Community licence fit. Not started.
