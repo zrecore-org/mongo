@@ -52,7 +52,7 @@ EOT
     for i in $(seq 1 60); do grep -q "LOOP STARTED" "$R/loop.out" 2>/dev/null && break; sleep 1; done
     sleep 6
     "$PY" "$H/counters.py" 27555 > "$R/counters_before.txt" 2>&1; echo "counters before SIGTERM: $(cat "$R/counters_before.txt" | grep -o "'gpuBatches': [0-9]*")"
-    local tsig=$(date +%s.%N 2>/dev/null || date +%s); kill -TERM $MP; local t0=$(date +%s); wait $MP; local rc=$?; local dt=$(( $(date +%s) - t0 ))
+    local tsig=$(date +%s.%N 2>/dev/null || date +%s); kill -TERM $MP; echo "sigterm $tsig" >> "$R/progress.txt"; local t0=$(date +%s); wait $MP; local rc=$?; local dt=$(( $(date +%s) - t0 ))
     for i in $(seq 1 15); do grep -q "LOOP ENDED\|LOOP FINISHED" "$R/loop.out" 2>/dev/null && break; sleep 1; done
     kill $LP 2>/dev/null; wait $LP 2>/dev/null
     echo "$rc" > "$R/exit.rc"; tail -2 "$R/loop.out"; echo "progress lines: $(wc -l < "$R/progress.txt")  last: $(tail -1 "$R/progress.txt")"
