@@ -965,7 +965,9 @@ int runContainsGpu(const string& dir, const string& which, size_t npts) {
     std::printf("CASE %s points=%zu stage ok=%d elapsedMs=%.1f verdicts equal CPU core: %s\n", which.c_str(), pts.size() / 3, r.ok ? 1 : 0, ms, got == ref ? "YES" : "NO");
     std::printf("COUNTERS%s\n", probe().c_str());
     // second run after the first: after a planted failure the device must stay disabled and results must still be right
+    const auto t2 = std::chrono::steady_clock::now();
     auto r2 = runContains(L, sp2, {containsDocOf(2, packMesh(sp), nullptr, &bin)});
+    std::printf("SECOND RUN elapsedMs=%.1f\n", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t2).count());
     int ec2 = 0; string got2 = r2.ok && r2.docs.size() == 1 ? outStr(r2.docs[0], "contains", &ec2) : "";
     std::printf("SECOND RUN verdicts equal CPU core: %s\nCOUNTERS%s\n", got2 == ref ? "YES" : "NO", probe().c_str());
     return got == ref && got2 == ref ? 0 : 1;

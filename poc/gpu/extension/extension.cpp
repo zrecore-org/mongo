@@ -152,7 +152,7 @@ struct Spec {
     bool contains = false;  // $meshContains (MP14d) instead of $meshVolume
     string input = "mesh", output = "meshVolume", points = "points", plant, probe;
     uint32_t batchSize = 1024;
-    uint32_t gpuMinPoints = 50000;   // $meshContains: the device path is considered only for at least this many points in one document
+    uint32_t gpuMinPoints = 250000;   // $meshContains: the device path is considered only for at least this many points in one document
     string engine = "auto";          // $meshContains: "auto" (device when enabled, ready and large enough) or "cpu" (never the device)
     int spinMs = 0;
     string raw;  // the validated sub-document, for serialize / clone
