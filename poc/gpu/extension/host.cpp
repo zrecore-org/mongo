@@ -26,6 +26,8 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <functional>
+#include <sys/resource.h>
+#include <thread>
 #include <random>
 #include <string>
 #include <sys/wait.h>
@@ -934,15 +936,32 @@ int runContainsGpu(const string& dir, const string& which, size_t npts) {
         if (which == "fail") b.str("plant", "gpuFail");
         if (which == "wrong") b.str("plant", "gpuWrong");
     });
-    auto t0 = std::chrono::steady_clock::now();
-    auto r = runContains(L, sp2, {containsDocOf(1, packMesh(sp), nullptr, &bin)});
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    int ec = 0; string got = r.ok && r.docs.size() == 1 ? outStr(r.docs[0], "contains", &ec) : "";
     auto probe = [&] { auto q = run(L, spec([](bm::Builder& b) { b.str("probe", "config"); }), {docOf(0, "")}); string line; if (q.ok && !q.docs.empty()) {
         bm::Elem e; auto* p = reinterpret_cast<const uint8_t*>(q.docs[0].data()); bm::findField(p, q.docs[0].size(), "meshVolume", &e);
         const uint8_t* x = e.val + 4; const uint8_t* end = e.val + e.vlen - 1;
         while (x < end) { bm::Elem f; if (!bm::readElem(x, end, &f)) break; x = f.end; if (f.type == bm::kInt64) { int64_t v; std::memcpy(&v, f.val, 8); line += " " + string(f.name) + "=" + std::to_string(v); } else if (f.type == bm::kBool) line += " " + string(f.name) + "=" + (f.val[0] ? "true" : "false"); else if (f.type == bm::kString) line += " " + string(f.name) + "=\"" + string(reinterpret_cast<const char*>(f.val + 4)) + "\""; } }
         return line; };
+    if (which == "concurrent" || which == "repeat") {   // several aggregations at once on one device context; or many runs for a leak check
+        auto spc = spec([](bm::Builder& b) { b.i32("gpuMinPoints", 1); });
+        const int threads = which == "concurrent" ? 6 : 1, runsEach = which == "concurrent" ? 6 : (getenv("MP14D_REPEAT") ? atoi(getenv("MP14D_REPEAT")) : 150);
+        std::atomic<int> bad{0}, done{0};
+        auto rss = [] { struct rusage ru; getrusage(RUSAGE_SELF, &ru); return (long)ru.ru_maxrss; };   // bytes on macOS, KiB on Linux
+        const long rss0 = rss();
+        std::vector<std::thread> th;
+        for (int t = 0; t < threads; t++) th.emplace_back([&, t] { for (int k = 0; k < runsEach; k++) {
+            auto rr = runContains(L, spc, {containsDocOf(t * 1000 + k, packMesh(sp), nullptr, &bin)});
+            int e2 = 0; string g2 = rr.ok && rr.docs.size() == 1 ? outStr(rr.docs[0], "contains", &e2) : "";
+            if (g2 != ref) bad++; done++; } });
+        for (auto& x : th) x.join();
+        const long rss1 = rss();
+        std::printf("CASE %s threads=%d runs=%d verdict-mismatching runs=%d rssGrowth=%ld (maxrss units)\n", which.c_str(), threads, done.load(), bad.load(), rss1 - rss0);
+        std::printf("COUNTERS%s\n", probe().c_str());
+        return bad == 0 ? 0 : 1;
+    }
+    auto t0 = std::chrono::steady_clock::now();
+    auto r = runContains(L, sp2, {containsDocOf(1, packMesh(sp), nullptr, &bin)});
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    int ec = 0; string got = r.ok && r.docs.size() == 1 ? outStr(r.docs[0], "contains", &ec) : "";
     std::printf("CASE %s points=%zu stage ok=%d elapsedMs=%.1f verdicts equal CPU core: %s\n", which.c_str(), pts.size() / 3, r.ok ? 1 : 0, ms, got == ref ? "YES" : "NO");
     std::printf("COUNTERS%s\n", probe().c_str());
     // second run after the first: after a planted failure the device must stay disabled and results must still be right

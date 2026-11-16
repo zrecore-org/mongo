@@ -18,6 +18,12 @@ o=$(go libmeshvol_ext fail);  echo "$o" | grep -E "CASE|COUNTERS|SECOND" | cut -
 chk "planted device failure: falls back, verdicts equal (both runs), breaker open (1 fallback, no device batch, engine cpu)" "$(all "$(has "$o" 'CASE fail.*equal CPU core: YES')" "$(has "$o" 'SECOND RUN verdicts equal CPU core: YES')" "$([ "$(cnt "$o" 2 gpuFallbacks)" = 1 ] && [ "$(cnt "$o" 2 gpuBatches)" = 0 ] && echo ok)" "$(has "$o" 'engine="cpu"')")"
 o=$(go libmeshvol_ext wrong); echo "$o" | grep -E "CASE|COUNTERS|SECOND" | cut -c1-260
 chk "planted wrong verdicts: shadow check catches, verdicts equal (both runs), device disabled" "$(all "$(has "$o" 'CASE wrong.*equal CPU core: YES')" "$(has "$o" 'SECOND RUN verdicts equal CPU core: YES')" "$([ "$(cnt "$o" 2 gpuShadowMismatch)" = 1 ] && [ "$(cnt "$o" 2 gpuBatches)" = 0 ] && echo ok)")"
+o=$("$LOCK" ./fakehost containsgpu ./libmeshvol_ext.dylib concurrent 20000 2>&1); echo "$o" | grep -E "CASE|COUNTERS" | cut -c1-220
+chk "concurrency: 6 threads x 6 aggregations on one device context, 0 mismatching runs, 36 device batches" "$(all "$(has "$o" 'verdict-mismatching runs=0')" "$([ "$(cnt "$o" 1 gpuBatches)" = 36 ] && echo ok)")"
+r50=$(MP14D_REPEAT=50 "$LOCK" ./fakehost containsgpu ./libmeshvol_ext.dylib repeat 20000 2>&1 | grep -o "rssGrowth=[0-9]*" | cut -d= -f2)
+r450=$(MP14D_REPEAT=450 "$LOCK" ./fakehost containsgpu ./libmeshvol_ext.dylib repeat 20000 2>&1 | grep -o "rssGrowth=[0-9]*" | cut -d= -f2)
+echo "rss growth after 50 runs: $r50, after 450 runs: $r450"
+chk "no leak: RSS growth between 50 and 450 device runs under 8 MB (each run allocates tens of MB of device buffers)" "$([ $((r450 - r50)) -lt 8000000 ] && echo ok)"
 echo "== mutants (each designated case must show the defect)"
 o=$(go libmeshvol_gpumut1 wrong); chk "mutant1 shadow check removed: caught (wrong verdicts reach the result)" "$(has "$o" 'CASE wrong.*equal CPU core: NO')"
 o=$(go libmeshvol_gpumut2 fail);  chk "mutant2 breaker never opens: caught (second run falls back again)" "$([ "$(cnt "$o" 2 gpuFallbacks)" = 2 ] && echo ok || echo no)"
