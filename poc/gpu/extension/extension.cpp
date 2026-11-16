@@ -47,7 +47,8 @@ string configDoc();  // MP14c, defined below
 const char* engineName();
 struct Spec;
 bool gpuEligible(const Spec& spec, size_t nPoints);   // MP14d, defined after the configuration
-int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const Spec& spec, string* verdicts, bool (*cancel)(void*), void* cancelArg);   // 1 done, 0 fall back to the CPU path, 2 cancelled
+struct MeshEntry;
+int containsGpu(MeshEntry& me, const std::vector<double>& pts, const Spec& spec, string* verdicts, bool (*cancel)(void*), void* cancelArg);   // 1 done, 0 fall back to the CPU path, 2 cancelled
 
 // ------------------------------------------------------------------ counters (reported through the "counters" probe)
 std::atomic<long> g_computeCalls{0}, g_sourcePulls{0}, g_throwsCaught{0}, g_maxBatch{0}, g_liveBufs{0}, g_liveStatuses{0}, g_liveObjs{0}, g_docsOut{0}, g_getNextCalls{0};
@@ -153,6 +154,7 @@ struct Spec {
     string input = "mesh", output = "meshVolume", points = "points", plant, probe;
     uint32_t batchSize = 1024;
     uint32_t gpuMinPoints = 250000;   // $meshContains: the device path is considered only for at least this many points in one document
+    bool meshCache = true;            // $meshContains: reuse the parsed mesh, its BVH and device tree across documents with byte-identical meshes
     string engine = "auto";          // $meshContains: "auto" (device when enabled, ready and large enough) or "cpu" (never the device)
     int spinMs = 0;
     string raw;  // the validated sub-document, for serialize / clone
@@ -191,6 +193,7 @@ struct Spec {
             if (e.name == "input") s.input = strVal();
             else if (e.name == "output") s.output = strVal();
             else if (s.contains && e.name == "points") s.points = strVal();
+            else if (s.contains && e.name == "meshCache") { if (e.type != bm::kBool) throw ExtErr{21, "$meshContains: meshCache must be a boolean"}; s.meshCache = e.val[0] != 0; }
             else if (s.contains && e.name == "engine") { s.engine = strVal(); if (s.engine != "auto" && s.engine != "cpu") throw ExtErr{19, "$meshContains: engine must be \"auto\" or \"cpu\""}; }
             else if (s.contains && e.name == "gpuMinPoints") { long v = numVal(); if (v < 1 || v > (1L << 30)) throw ExtErr{20, "$meshContains: gpuMinPoints must be in [1, 2^30]"}; s.gpuMinPoints = (uint32_t)v; }
             else if (e.name == "plant") s.plant = strVal();
@@ -274,17 +277,60 @@ int readPoints(const bm::Elem& e, std::vector<double>* out) {
     return meshvol::kOk;
 }
 // CPU path: exact verdicts for every point. This is the default and the oracle for any other path.
+// ------------------------------------------------------------------ MP14d: mesh cache (dedup across documents)
+// Documents whose mesh bytes are identical share one parsed mesh, one CPU BVH and one device tree. Keyed by a 64-bit hash of the bytes, always CONFIRMED by a full byte comparison (a hash collision cannot
+// give a wrong answer). LRU of at most 4 entries and 512 MiB (estimated as 6x the packed size); a larger mesh is used once and not kept. Per-entry builds run once (std::call_once).
+struct MeshEntry {
+    string bytes;
+    int code = meshvol::kOk;           // result of parse + closed check, cached too (an invalid mesh is invalid every time)
+    meshvol::Packed m;
+    meshcontains::Bvh bvh; std::once_flag bvhOnce;
+#ifdef MESHVOL_GPU
+    gpupip::Tree tree; std::once_flag treeOnce;
+#endif
+    const meshcontains::Bvh& cpuBvh() { std::call_once(bvhOnce, [&] { bvh.build(m.v, m.t); }); return bvh; }
+};
+std::atomic<long> g_meshCacheHits{0}, g_meshCacheMisses{0};
+std::mutex g_meshCacheMutex;
+std::vector<std::shared_ptr<MeshEntry>> g_meshCache;   // most recently used last
+std::shared_ptr<MeshEntry> meshLookup(const uint8_t* p, size_t len, bool useCache) {
+    if (useCache) {
+        std::lock_guard<std::mutex> g(g_meshCacheMutex);
+        for (size_t i = 0; i < g_meshCache.size(); i++) {
+            auto& e = g_meshCache[i];
+#if defined(MESHVOL_CACHEMUT) && MESHVOL_CACHEMUT == 1
+            if (e->bytes.size() == len) {   // mutant: key is the length only, no byte comparison
+#else
+            if (e->bytes.size() == len && std::memcmp(e->bytes.data(), p, len) == 0) {
+#endif
+                auto hit = e; g_meshCache.erase(g_meshCache.begin() + i); g_meshCache.push_back(hit); g_meshCacheHits++; return hit;
+            }
+        }
+    }
+    auto e = std::make_shared<MeshEntry>();
+    e->bytes.assign(reinterpret_cast<const char*>(p), len);
+    if ((e->code = meshvol::parsePacked(p, len, &e->m)) == meshvol::kOk) e->code = meshvol::checkClosed(e->m);
+    g_meshCacheMisses++;
+    if (useCache && len * 6 <= (size_t)512 << 20) {
+        std::lock_guard<std::mutex> g(g_meshCacheMutex);
+        g_meshCache.push_back(e);
+        size_t total = 0; for (auto& x : g_meshCache) total += x->bytes.size() * 6;
+        while (g_meshCache.size() > 4 || (g_meshCache.size() > 1 && total > ((size_t)512 << 20))) { total -= g_meshCache.front()->bytes.size() * 6; g_meshCache.erase(g_meshCache.begin()); }
+    }
+    return e;
+}
+
 // Returns false if cancelled (deadline or kill, polled every 256 points) before all points were done.
-bool containsCpu(const meshvol::Packed& m, const std::vector<double>& pts, string* verdicts, bool (*cancel)(void*), void* cancelArg) {
+bool containsCpu(MeshEntry& me, const std::vector<double>& pts, string* verdicts, bool (*cancel)(void*), void* cancelArg) {
+    const meshvol::Packed& m = me.m;
     const size_t n = pts.size() / 3;
     verdicts->resize(n);
-    meshcontains::Bvh bvh;
     const bool useBvh = n >= 8;                     // a tree pays for itself only with several points; the verdicts are identical either way
-    if (useBvh) bvh.build(m.v, m.t);
+    const meshcontains::Bvh* bvh = useBvh ? &me.cpuBvh() : nullptr;
     std::vector<uint32_t> scratch;
     for (size_t i = 0; i < n; i++) {
         if ((i & 255) == 255 && cancel(cancelArg)) return false;
-        const auto v = useBvh ? meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch) : meshcontains::classify(m.v, m.t, &pts[3 * i]);
+        const auto v = useBvh ? meshcontains::classifyBvh(m.v, m.t, *bvh, &pts[3 * i], &scratch) : meshcontains::classify(m.v, m.t, &pts[3 * i]);
         (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
     }
     return true;
@@ -295,19 +341,18 @@ bool containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o, bool
     if (!bm::findField(d, len, spec.input, &e)) { o.code = meshvol::kMissingField; return true; }
     if (e.type != bm::kBinData) { o.code = meshvol::kNotBinData; return true; }
     if (e.val[4] != 0) { o.code = meshvol::kBadSubtype; return true; }
-    meshvol::Packed m;
-    if ((o.code = meshvol::parsePacked(e.val + 5, e.vlen - 5, &m)) != meshvol::kOk) return true;
-    if ((o.code = meshvol::checkClosed(m)) != meshvol::kOk) return true;
+    auto me = meshLookup(e.val + 5, e.vlen - 5, spec.meshCache);
+    if ((o.code = me->code) != meshvol::kOk) return true;
     bm::Elem pe;
     if (!bm::findField(d, len, spec.points, &pe)) { o.code = meshvol::kMissingField; return true; }
     std::vector<double> pts;
     if ((o.code = readPoints(pe, &pts)) != meshvol::kOk) return true;
     if (gpuEligible(spec, pts.size() / 3)) {
-        const int r = containsGpu(m, pts, spec, &o.verdicts, cancel, cancelArg);
+        const int r = containsGpu(*me, pts, spec, &o.verdicts, cancel, cancelArg);
         if (r == 1) return true;
         if (r == 2) return false;
     }
-    return containsCpu(m, pts, &o.verdicts, cancel, cancelArg);
+    return containsCpu(*me, pts, &o.verdicts, cancel, cancelArg);
 }
 
 // Returns false if cancelled (deadline or kill) before every document was done.
@@ -551,7 +596,7 @@ string configDoc() {
     bm::Builder b;
     b.boolean("gpuRequested", g_cfg.gpu).boolean("gpuRequired", g_cfg.gpuRequired).boolean("gpuProbed", g_cfg.gpuProbed)
         .boolean("gpuReady", g_cfg.gpuReady).str("engine", engineName()).str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes)
-        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure);
+        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure).i64("meshCacheHits", g_meshCacheHits).i64("meshCacheMisses", g_meshCacheMisses);
     return b.finish();
 }
 
@@ -568,8 +613,9 @@ bool gpuEligible(const Spec& spec, size_t nPoints) {
     (void)spec; (void)nPoints; return false;
 #endif
 }
-int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const Spec& spec, string* verdicts, bool (*cancel)(void*), void* cancelArg) {
+int containsGpu(MeshEntry& me, const std::vector<double>& pts, const Spec& spec, string* verdicts, bool (*cancel)(void*), void* cancelArg) {
 #ifdef MESHVOL_GPU
+    const meshvol::Packed& m = me.m;
     const size_t n = pts.size() / 3;
     #if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 2
     auto fallback = [&](const string& why) { g_gpuFallbacks++; (void)why; return 0; };   // mutant: breaker never opens
@@ -581,11 +627,12 @@ int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const 
     std::lock_guard<std::mutex> lk(E.mutex);
     if (g_gpuDisabled.load()) return 0;
     if (cancel(cancelArg)) return 2;
-    gpupip::Tree tree = gpupip::buildTree(m.v, m.t);
+    std::call_once(me.treeOnce, [&] { me.tree = gpupip::buildTree(m.v, m.t); });
+    const gpupip::Tree& tree = me.tree;
     std::vector<uint32_t> dv; string err;
     if (!E.classify(m.v, m.t, tree, pts, &dv, 10'000'000'000ull, &err, spec.plant)) return fallback(err);
     if (spec.plant == "gpuWrong") for (size_t i = 0; i < n; i += 64) if (dv[i] != 2) dv[i] ^= 1;   // planted: wrong definite verdicts where the shadow check looks
-    meshcontains::Bvh bvh; bvh.build(m.v, m.t);
+    const meshcontains::Bvh& bvh = me.cpuBvh();
     std::vector<uint32_t> scratch;
     verdicts->assign(n, 'O');
     long uncertain = 0;
@@ -613,7 +660,7 @@ int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const 
     g_gpuBatches++; g_gpuPoints += (long)n; g_gpuUncertain += uncertain;
     return 1;
 #else
-    (void)m; (void)pts; (void)spec; (void)verdicts; (void)cancel; (void)cancelArg; return 0;
+    (void)me; (void)pts; (void)spec; (void)verdicts; (void)cancel; (void)cancelArg; return 0;
 #endif
 }
 

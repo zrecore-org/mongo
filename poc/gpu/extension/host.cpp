@@ -905,6 +905,28 @@ int runContainsTests(const string& dir) {
         auto rd = runPipeline(L, stageBsonContains(spec([](bm::Builder&) {})), {containsDocOf(1, packMesh(big), nullptr, &manyBin)}, ctx, L.descContains);
         chk("deadline inside one document: stops with status 50 after the deadline, not after the whole batch", !rd.ok && rd.err.code == 50 && rd.ms < 2500, "elapsedMs=" + std::to_string((long)rd.ms) + " code=" + std::to_string(rd.err.code));
     }
+    // mesh cache (dedup across documents): identical mesh bytes are parsed and indexed once; results must not change; the counters must show the hits
+    {
+        mesh::Mesh big = uvSphere(150, 200, 1.0, 0, 0, 0);   // 30,000 triangles
+        string bigPacked = packMesh(big); vector<double> few; std::mt19937_64 g(11); for (int i = 0; i < 300; i++) few.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.5);
+        string fewArr = pointsArray(few);
+        vector<string> same; for (int i = 0; i < 40; i++) same.push_back(containsDocOf(i, bigPacked, &fewArr, nullptr));
+        auto ts = [&](bool cache) { auto sp = spec([&](bm::Builder& b) { b.boolean("meshCache", cache); }); auto t0 = std::chrono::steady_clock::now(); auto rr = runContains(L, sp, same); double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); return std::make_pair(rr, ms); };
+        auto off = ts(false); auto on = ts(true);
+        bool eq = off.first.ok && on.first.ok && off.first.docs.size() == 40 && on.first.docs.size() == 40;
+        if (eq) for (size_t i = 0; i < 40; i++) { int e1, e2; if (outStr(off.first.docs[i], "contains", &e1) != outStr(on.first.docs[i], "contains", &e2) || e1 != 0 || e2 != 0) eq = false; }
+        chk("mesh cache: 40 documents with one 30,000-triangle mesh, identical results with and without the cache", eq);
+        auto q = run(L, spec([](bm::Builder& b) { b.str("probe", "config"); }), {docOf(0, "")});
+        long hits = -1; if (q.ok && !q.docs.empty()) { bm::Elem e; auto* pp = reinterpret_cast<const uint8_t*>(q.docs[0].data()); bm::findField(pp, q.docs[0].size(), "meshVolume", &e); bm::Elem h; if (bm::findField(e.val, e.vlen, "meshCacheHits", &h) && h.type == bm::kInt64) { int64_t v; std::memcpy(&v, h.val, 8); hits = (long)v; } }
+        chk("mesh cache: hits recorded (at least 39 for the cached run)", hits >= 39, "hits=" + std::to_string(hits));
+        std::printf("INFO mesh cache timing, 40 docs x 300 points on a 30,000-triangle mesh: cache off %.1f ms, cache on %.1f ms\n", off.second, on.second);
+        // different meshes interleaved must never be confused
+        mesh::Mesh other = uvSphere(150, 200, 0.5, 0.2, 0.2, 0.2); string otherPacked = packMesh(other);   // same dimensions, hence the same byte length, different geometry string otherPacked = packMesh(other);
+        vector<string> mix; for (int i = 0; i < 20; i++) mix.push_back(containsDocOf(i, i % 2 ? bigPacked : otherPacked, &fewArr, nullptr));
+        auto rm = runContains(L, spec([](bm::Builder&) {}), mix); bool okmix = rm.ok && rm.docs.size() == 20;
+        if (okmix) for (int i = 0; i < 20; i++) { int e1; string got = outStr(rm.docs[i], "contains", &e1); string want = ref(i % 2 ? big : other, few); if (got != want) okmix = false; }
+        chk("mesh cache: two meshes interleaved give the right verdicts for each document", okmix);
+    }
     // stage options and name mismatch
     auto rs = runContains(L, spec([](bm::Builder& b) { b.str("points", "pts"); b.str("output", "verdict"); }), {[&] { bm::Builder b; b.i32("_id", 1); b.bin("mesh", packMesh(bx).data(), packMesh(bx).size()); b.head(bm::kArray, "pts"); b.b.append(onePt); return b.finish(); }()});
     { int ec; chk("custom points and output field names", rs.ok && rs.docs.size() == 1 && outStr(rs.docs[0], "verdict", &ec) == "I"); }
