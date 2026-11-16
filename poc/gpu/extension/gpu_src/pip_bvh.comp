@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org contributors
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+// MP12c: ray-parity point-in-solid FILTER through the MP10 LBVH. One thread per query: walk the tree with the ray box (host-built, outward-rounded binary32:
+// lo = (px, py, pz) rounded down, hi = (+inf, py, pz) rounded up), and run pipTri (gpu/pip_filter.inc, soft binary64, shared with the CPU twin) on the leaves that
+// overlap. Verdict 0 OUT, 1 IN, 2 UNCERTAIN (any UNCERT triangle, or a traversal stack overflow: the exact CPU test decides the whole query).
+// Mesh id: triangle k of the scene belongs to mesh tmesh[k]; a query only counts triangles of its own mesh (queries of mesh m carry m in qmesh).
+// Planted mutants (-DBMUT=n): 2 stack overflow ignored (the walk just stops: parity left as it is), 5 right child dropped after a left-child hit.
+// BMUT=1 makes the box overlap strict (same test as lbvh_common.glsl, which cannot be included here: f64soft.inc defines a MUT macro of its own). PMUT=1..5 as in pip_ray.comp.
+#include "f64soft.inc"
+#include "orient_filter.inc"
+#include "pip_filter.inc"
+#ifndef BMUT
+#define BMUT 0
+#endif
+bool boxOverlap(vec3 alo, vec3 ahi, vec3 blo, vec3 bhi) {
+#if BMUT == 1
+    return all(lessThan(alo, bhi)) && all(lessThan(blo, ahi));
+#else
+    return all(lessThanEqual(alo, bhi)) && all(lessThanEqual(blo, ahi));
+#endif
+}
+#ifndef STK
+#define STK 64
+#endif
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer V { uint64_t v[]; };
+layout(std430, binding = 1) readonly buffer T { uint t[]; };
+layout(std430, binding = 2) readonly buffer Q { uint64_t q[]; };
+layout(std430, binding = 3) readonly buffer QB { float qbox[]; };
+layout(std430, binding = 4) readonly buffer NB { float nb[]; };
+layout(std430, binding = 5) readonly buffer L { uint lc[]; };
+layout(std430, binding = 6) readonly buffer R { uint rc[]; };
+layout(std430, binding = 7) readonly buffer I { uint sortedIdx[]; };
+layout(std430, binding = 8) readonly buffer MQ { uint qmesh[]; };
+layout(std430, binding = 9) readonly buffer MT { uint tmesh[]; };
+layout(std430, binding = 10) writeonly buffer OUT { uint verdict[]; };
+layout(push_constant) uniform P { uint nq; uint n; uint multi; } pc;
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.nq) return;
+#if PMUT == 5
+    if (gl_LocalInvocationID.x == 63u) { verdict[i] = 1u; return; }
+#endif
+    uint64_t px = q[3u * i], py = q[3u * i + 1u], pz = q[3u * i + 2u];
+    vec3 qlo = vec3(qbox[6u * i], qbox[6u * i + 1u], qbox[6u * i + 2u]), qhi = vec3(qbox[6u * i + 3u], qbox[6u * i + 4u], qbox[6u * i + 5u]);
+    uint mine = pc.multi != 0u ? qmesh[i] : 0u;
+    uint crossings = 0u;
+    uint stack[STK]; int sp = 0;
+    stack[sp++] = 0u;
+    while (sp > 0) {
+        uint node = stack[--sp];
+        vec3 lo = vec3(nb[6u * node], nb[6u * node + 1u], nb[6u * node + 2u]), hi = vec3(nb[6u * node + 3u], nb[6u * node + 4u], nb[6u * node + 5u]);
+        if (!boxOverlap(qlo, qhi, lo, hi)) continue;
+        if (node >= pc.n - 1u) {
+            uint k = sortedIdx[node - (pc.n - 1u)];
+            if (pc.multi != 0u && tmesh[k] != mine) continue;
+            uint a = t[3u * k], b = t[3u * k + 1u], c = t[3u * k + 2u];
+            uint r = pipTri(v[3u * a], v[3u * a + 1u], v[3u * a + 2u], v[3u * b], v[3u * b + 1u], v[3u * b + 2u], v[3u * c], v[3u * c + 1u], v[3u * c + 2u], px, py, pz);
+            if (r == PIP_UNCERT) { verdict[i] = 2u; return; }
+            crossings += r;
+        } else {
+            uint a = lc[node], b = rc[node];
+            if (sp + 2 > STK) {
+#if BMUT == 2
+                break;
+#else
+                verdict[i] = 2u; return;
+#endif
+            }
+#if BMUT == 5
+            stack[sp++] = a;
+            { vec3 alo = vec3(nb[6u * a], nb[6u * a + 1u], nb[6u * a + 2u]), ahi = vec3(nb[6u * a + 3u], nb[6u * a + 4u], nb[6u * a + 5u]); if (boxOverlap(qlo, qhi, alo, ahi)) stack[sp++] = b; }
+#else
+            stack[sp++] = a; stack[sp++] = b;
+#endif
+        }
+    }
+    verdict[i] = crossings & 1u;
+}

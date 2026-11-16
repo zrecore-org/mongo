@@ -11,6 +11,9 @@
 #include "bson_min.h"
 #include "meshvol_core.h"
 #include "meshcontains_core.h"
+#ifdef MESHVOL_GPU
+#include "gpu_pip.h"
+#endif
 
 #include <atomic>
 #include <condition_variable>
@@ -41,6 +44,10 @@ __attribute__((noinline)) int collide_me() { return 1; }
 namespace {
 using std::string;
 string configDoc();  // MP14c, defined below
+const char* engineName();
+struct Spec;
+bool gpuEligible(const Spec& spec, size_t nPoints);   // MP14d, defined after the configuration
+int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const Spec& spec, string* verdicts, bool (*cancel)(void*), void* cancelArg);   // 1 done, 0 fall back to the CPU path, 2 cancelled
 
 // ------------------------------------------------------------------ counters (reported through the "counters" probe)
 std::atomic<long> g_computeCalls{0}, g_sourcePulls{0}, g_throwsCaught{0}, g_maxBatch{0}, g_liveBufs{0}, g_liveStatuses{0}, g_liveObjs{0}, g_docsOut{0}, g_getNextCalls{0};
@@ -145,6 +152,8 @@ struct Spec {
     bool contains = false;  // $meshContains (MP14d) instead of $meshVolume
     string input = "mesh", output = "meshVolume", points = "points", plant, probe;
     uint32_t batchSize = 1024;
+    uint32_t gpuMinPoints = 50000;   // $meshContains: the device path is considered only for at least this many points in one document
+    string engine = "auto";          // $meshContains: "auto" (device when enabled, ready and large enough) or "cpu" (never the device)
     int spinMs = 0;
     string raw;  // the validated sub-document, for serialize / clone
 
@@ -182,6 +191,8 @@ struct Spec {
             if (e.name == "input") s.input = strVal();
             else if (e.name == "output") s.output = strVal();
             else if (s.contains && e.name == "points") s.points = strVal();
+            else if (s.contains && e.name == "engine") { s.engine = strVal(); if (s.engine != "auto" && s.engine != "cpu") throw ExtErr{19, "$meshContains: engine must be \"auto\" or \"cpu\""}; }
+            else if (s.contains && e.name == "gpuMinPoints") { long v = numVal(); if (v < 1 || v > (1L << 30)) throw ExtErr{20, "$meshContains: gpuMinPoints must be in [1, 2^30]"}; s.gpuMinPoints = (uint32_t)v; }
             else if (e.name == "plant") s.plant = strVal();
             else if (e.name == "probe") s.probe = strVal();
             else if (e.name == "batchSize") {
@@ -291,6 +302,11 @@ bool containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o, bool
     if (!bm::findField(d, len, spec.points, &pe)) { o.code = meshvol::kMissingField; return true; }
     std::vector<double> pts;
     if ((o.code = readPoints(pe, &pts)) != meshvol::kOk) return true;
+    if (gpuEligible(spec, pts.size() / 3)) {
+        const int r = containsGpu(m, pts, spec, &o.verdicts, cancel, cancelArg);
+        if (r == 1) return true;
+        if (r == 2) return false;
+    }
     return containsCpu(m, pts, &o.verdicts, cancel, cancelArg);
 }
 
@@ -373,7 +389,7 @@ struct Config {
     string gpuReason = "not requested";
 };
 Config g_cfg;
-std::atomic<long> g_vulkanProbes{0};
+std::atomic<long> g_vulkanProbes{0}, g_gpuBatches{0}, g_gpuFallbacks{0}, g_gpuShadowMismatch{0}, g_gpuUncertain{0}, g_gpuPoints{0};
 string vulkanProbe();
 
 string trimWs(const string& x) {
@@ -470,11 +486,10 @@ bool probeWithDeadline(string* docOut, int64_t limitMs) {
     *docOut = sh->doc;
     return true;
 }
-void logGateLine(const Config& c) {
+void logMsg(const string& msg) {
     if (!g_hostServices || !g_hostServices->vtable->get_logger) return;
     MongoExtensionLogger* lg = g_hostServices->vtable->get_logger();
     if (!lg) return;
-    const string msg = string("meshvolume: gpu requested=") + (c.gpu ? "true" : "false") + " ready=" + (c.gpuReady ? "true" : "false") + " engine=cpu reason=" + c.gpuReason;
     MongoExtensionLogMessage m{};
     m.code = 7001400;
     m.message = {reinterpret_cast<const uint8_t*>(msg.data()), msg.size()};
@@ -484,10 +499,9 @@ void logGateLine(const Config& c) {
     MongoExtensionStatus* st = lg->vtable->log(&m);
     consume(st);
 }
-#if defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 7
-// mutant: opens the loader from a static initialiser, before the config is parsed (the probe counter stays 0)
-struct EarlyOpen { EarlyOpen() { dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL); dlopen("/opt/homebrew/lib/libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL); dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL); } } g_earlyOpen;
-#endif
+void logGateLine(const Config& c) {
+    logMsg(string("meshvolume: gpu requested=") + (c.gpu ? "true" : "false") + " ready=" + (c.gpuReady ? "true" : "false") + " engine=" + (c.gpu && c.gpuReady ? "gpu" : "cpu") + " reason=" + c.gpuReason);
+}
 // Applies the gate: only when gpu is true does the extension touch Vulkan (one probe, at initialize, cached for the process).
 void applyGpuGate(Config& c) {
     if (!c.gpu) { c.gpuReason = "not requested"; logGateLine(c); return; }
@@ -524,11 +538,82 @@ void applyGpuGate(Config& c) {
     logGateLine(c);
     if (!c.gpuReady && c.gpuRequired) throw ExtErr{36, "meshvolume: gpuRequired is true but the GPU is not ready: " + c.gpuReason};
 }
+std::atomic<bool> g_gpuDisabled{false};   // the breaker: one device failure, timeout or shadow mismatch disables the device path until restart (a failed submission poisons the context)
+const char* engineName() {
+#ifdef MESHVOL_GPU
+    return g_cfg.gpu && g_cfg.gpuReady && !g_gpuDisabled.load() ? "gpu" : "cpu";   // "gpu" = the device path is available for large documents; small ones and engine:\"cpu\" stay on the CPU
+#else
+    return "cpu";
+#endif
+}
 string configDoc() {
     bm::Builder b;
     b.boolean("gpuRequested", g_cfg.gpu).boolean("gpuRequired", g_cfg.gpuRequired).boolean("gpuProbed", g_cfg.gpuProbed)
-        .boolean("gpuReady", g_cfg.gpuReady).str("engine", "cpu").str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes);
+        .boolean("gpuReady", g_cfg.gpuReady).str("engine", engineName()).str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes)
+        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints);
     return b.finish();
+}
+
+// ------------------------------------------------------------------ MP14d: the device path (only reachable when the MP14c gate says gpu requested and ready)
+void logMsg(const string& msg);
+bool gpuEligible(const Spec& spec, size_t nPoints) {
+#ifdef MESHVOL_GPU
+#if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 3
+    return spec.contains && spec.engine == "auto" && g_cfg.gpu && g_cfg.gpuReady && !g_gpuDisabled.load();   // mutant: threshold ignored
+#else
+    return spec.contains && spec.engine == "auto" && g_cfg.gpu && g_cfg.gpuReady && !g_gpuDisabled.load() && nPoints >= spec.gpuMinPoints;
+#endif
+#else
+    (void)spec; (void)nPoints; return false;
+#endif
+}
+int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const Spec& spec, string* verdicts, bool (*cancel)(void*), void* cancelArg) {
+#ifdef MESHVOL_GPU
+    const size_t n = pts.size() / 3;
+    #if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 2
+    auto fallback = [&](const string& why) { g_gpuFallbacks++; (void)why; return 0; };   // mutant: breaker never opens
+#else
+    auto fallback = [&](const string& why) { g_gpuFallbacks++; g_gpuDisabled = true; logMsg("meshvolume: device path disabled, falling back to the CPU path: " + why); return 0; };
+#endif
+    if (spec.plant == "gpuFail") return fallback("planted device failure");
+    gpupip::Engine& E = gpupip::engine();
+    std::lock_guard<std::mutex> lk(E.mutex);
+    if (g_gpuDisabled.load()) return 0;
+    if (cancel(cancelArg)) return 2;
+    gpupip::Tree tree = gpupip::buildTree(m.v, m.t);
+    std::vector<uint32_t> dv; string err;
+    if (!E.classify(m.v, m.t, tree, pts, &dv, 10'000'000'000ull, &err)) return fallback(err);
+    if (spec.plant == "gpuWrong") for (size_t i = 0; i < n; i += 64) if (dv[i] != 2) dv[i] ^= 1;   // planted: wrong definite verdicts where the shadow check looks
+    meshcontains::Bvh bvh; bvh.build(m.v, m.t);
+    std::vector<uint32_t> scratch;
+    verdicts->assign(n, 'O');
+    long uncertain = 0;
+    for (size_t i = 0; i < n; i++) {
+        if ((i & 255) == 255 && cancel(cancelArg)) return 2;
+#if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 4
+        if (dv[i] == 2) { (*verdicts)[i] = 'O'; continue; }   // mutant: UNCERTAIN trusted as OUT
+#endif
+        if (dv[i] == 2) {   // the device is not sure: the exact CPU path decides
+            const auto v = meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch);
+            (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O'; uncertain++;
+        } else (*verdicts)[i] = dv[i] ? 'I' : 'O';
+    }
+    // shadow check: every 64th point with a definite device verdict is recomputed exactly; one mismatch disables the device path and the whole batch is redone on the CPU
+#if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 1
+    for (size_t i = 0; i < 0; i += 64) {   // mutant: shadow check removed
+#else
+    for (size_t i = 0; i < n; i += 64) {
+#endif
+        if (dv[i] == 2) continue;
+        const auto v = meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch);
+        const char want = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
+        if ((*verdicts)[i] != want) { g_gpuShadowMismatch++; return fallback("shadow check mismatch at point " + std::to_string(i)); }
+    }
+    g_gpuBatches++; g_gpuPoints += (long)n; g_gpuUncertain += uncertain;
+    return 1;
+#else
+    (void)m; (void)pts; (void)spec; (void)verdicts; (void)cancel; (void)cancelArg; return 0;
+#endif
 }
 
 // ------------------------------------------------------------------ probes

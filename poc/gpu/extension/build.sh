@@ -13,7 +13,9 @@ EXT="$COMMON -fPIC -fvisibility=hidden -fvisibility-inlines-hidden $BOOST -dynam
 t() { [ $# -eq 0 ] || echo "$TARGETS" | grep -qw "$1"; }
 TARGETS="${*:-all}"
 want() { [ "$TARGETS" = all ] || echo " $TARGETS " | grep -q " $1 "; }
-if want ext;      then clang++ $EXT -DMESHVOL_VULKAN_PROBE -I$VKH "$HERE/extension.cpp" -o "$OUT/libmeshvol_ext.dylib" & fi
+VOLK=/Volumes/CrucialX9/Projects/exactmesh/build/deps/volk-vulkan-sdk-1.3.283.0   # volk (MIT), read only, pinned by exactmesh/third_party/fetch.sh
+if want ext;      then clang -O2 -w -fPIC -fvisibility=hidden -I$VKH -I$VOLK -c "$VOLK/volk.c" -o "$OUT/volk.o" && clang++ $EXT -DMESHVOL_VULKAN_PROBE -DMESHVOL_GPU -I$VKH -I$VOLK "$HERE/extension.cpp" "$OUT/volk.o" -o "$OUT/libmeshvol_ext.dylib" & fi
+for m in 1 2 3 4; do if want gpumut$m; then clang++ $EXT -DMESHVOL_VULKAN_PROBE -DMESHVOL_GPU -DMESHVOL_GPUMUT=$m -I$VKH -I$VOLK "$HERE/extension.cpp" "$OUT/volk.o" -o "$OUT/libmeshvol_gpumut$m.dylib" & fi; done   # MP14d device-path mutants
 if want mut1;     then clang++ $EXT -DMESHVOL_MUTANT=1 "$HERE/extension.cpp" -o "$OUT/libmeshvol_mut1.dylib" & fi
 if want mut2;     then clang++ $EXT -DMESHVOL_MUTANT=2 "$HERE/extension.cpp" -o "$OUT/libmeshvol_mut2.dylib" & fi
 if want mut3;     then clang++ $EXT -DMESHVOL_MUTANT=3 "$HERE/extension.cpp" -o "$OUT/libmeshvol_mut3.dylib" & fi

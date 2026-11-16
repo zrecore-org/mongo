@@ -915,6 +915,43 @@ int runContainsTests(const string& dir) {
     return fails ? 1 : 0;
 }
 
+// MP14d step 2: the device path through the stage. Usage: fakehost containsgpu <lib> <case> [npoints]. Loads with `gpu: true`; cases: ok (device path must be used, results equal the CPU core),
+// small (below the threshold: CPU), cpu (engine "cpu" knob: CPU), fail (planted device failure: fall back, same results, device disabled afterwards), wrong (planted wrong verdicts: shadow check catches,
+// same results, device disabled). Prints counters from the config probe.
+int runContainsGpu(const string& dir, const string& which, size_t npts) {
+    g_extOptions = "gpu: true";
+    ExtLib L = loadExtension(dir);
+    if (!L.ok) { std::printf("load failed: %s\n", L.error.c_str()); return 2; }
+    mesh::Mesh sp = uvSphere(60, 80, 1.0, 0.25, 0.0, -0.125);   // 9,600 triangles
+    vector<double> pts; { std::mt19937_64 g(99); for (size_t i = 0; i < npts * 3; i++) pts.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.5); }
+    // include boundary-ish points: mesh vertices and exact face points, so the device sees UNCERTAIN and the exact path decides
+    for (size_t i = 0; i < 40 && i < sp.nv(); i++) { pts.push_back(sp.v[3*i]); pts.push_back(sp.v[3*i+1]); pts.push_back(sp.v[3*i+2]); }
+    string bin(reinterpret_cast<const char*>(pts.data()), pts.size() * 8);
+    string ref; for (size_t i = 0; i < pts.size() / 3; i++) { auto k = meshcontains::classify(sp.v, sp.t, &pts[3*i]); ref += k == meshcontains::kIn ? 'I' : k == meshcontains::kOn ? 'B' : 'O'; }
+    auto sp2 = spec([&](bm::Builder& b) {
+        if (which == "ok" || which == "fail" || which == "wrong") b.i32("gpuMinPoints", 1);
+        if (which == "cpu") { b.i32("gpuMinPoints", 1); b.str("engine", "cpu"); }
+        if (which == "fail") b.str("plant", "gpuFail");
+        if (which == "wrong") b.str("plant", "gpuWrong");
+    });
+    auto t0 = std::chrono::steady_clock::now();
+    auto r = runContains(L, sp2, {containsDocOf(1, packMesh(sp), nullptr, &bin)});
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    int ec = 0; string got = r.ok && r.docs.size() == 1 ? outStr(r.docs[0], "contains", &ec) : "";
+    auto probe = [&] { auto q = run(L, spec([](bm::Builder& b) { b.str("probe", "config"); }), {docOf(0, "")}); string line; if (q.ok && !q.docs.empty()) {
+        bm::Elem e; auto* p = reinterpret_cast<const uint8_t*>(q.docs[0].data()); bm::findField(p, q.docs[0].size(), "meshVolume", &e);
+        const uint8_t* x = e.val + 4; const uint8_t* end = e.val + e.vlen - 1;
+        while (x < end) { bm::Elem f; if (!bm::readElem(x, end, &f)) break; x = f.end; if (f.type == bm::kInt64) { int64_t v; std::memcpy(&v, f.val, 8); line += " " + string(f.name) + "=" + std::to_string(v); } else if (f.type == bm::kBool) line += " " + string(f.name) + "=" + (f.val[0] ? "true" : "false"); else if (f.type == bm::kString) line += " " + string(f.name) + "=\"" + string(reinterpret_cast<const char*>(f.val + 4)) + "\""; } }
+        return line; };
+    std::printf("CASE %s points=%zu stage ok=%d elapsedMs=%.1f verdicts equal CPU core: %s\n", which.c_str(), pts.size() / 3, r.ok ? 1 : 0, ms, got == ref ? "YES" : "NO");
+    std::printf("COUNTERS%s\n", probe().c_str());
+    // second run after the first: after a planted failure the device must stay disabled and results must still be right
+    auto r2 = runContains(L, sp2, {containsDocOf(2, packMesh(sp), nullptr, &bin)});
+    int ec2 = 0; string got2 = r2.ok && r2.docs.size() == 1 ? outStr(r2.docs[0], "contains", &ec2) : "";
+    std::printf("SECOND RUN verdicts equal CPU core: %s\nCOUNTERS%s\n", got2 == ref ? "YES" : "NO", probe().c_str());
+    return got == ref && got2 == ref ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
     const string mode = argc > 1 ? argv[1] : "all";
     const string dir = argc > 2 ? argv[2] : ".";
@@ -937,6 +974,8 @@ int main(int argc, char** argv) {
         std::printf("CORPUS total=%ld wrong=%ld exactMismatch=%ld roundingWrong=%ld errors=%ld\n", cs.total, cs.wrong, cs.wrongExact, cs.wrongRound, cs.errors);
         std::printf("MUTANT-SUMMARY lib=%s wrong=%ld\n", dir.c_str(), cs.wrong);
         return 0;
+    } else if (mode == "containsgpu") {
+        return runContainsGpu(dir, argc > 3 ? argv[3] : "ok", argc > 4 ? (size_t)atol(argv[4]) : (argc > 3 && string(argv[3]) == "small" ? 1000 : 100000));
     } else if (mode == "contains") {
         return runContainsTests(dir);
     } else if (mode == "options") {  // MP14c: options <lib> <yaml text>: load with that extensionOptions text, report init result, config probe, corpus
