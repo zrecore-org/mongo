@@ -86,6 +86,8 @@ not part of the proofs of concept and will not ship.
 
 ## License of this directory
 
+For what the SSPL asks of us if we ship our own fork builds (research note, not legal advice), see [LICENSING.md](LICENSING.md).
+
 This directory is part of the MongoDB source tree and, unless a file says otherwise, is covered by the
 repository's license, the Server Side Public License v1 (`LICENSE-Community.txt` at the repository root). The
 files here do not yet carry per-file SPDX headers; add them before any of this moves under `src/`.
