@@ -69,7 +69,7 @@ struct Engine {
     std::mutex mutex;
     gpu::Ctx ctx; gpu::Kernel kernel;
     bool created = false, failed = false; std::string failure, deviceName;
-    long runs = 0;
+    long runs = 0, leaked = 0;
     // Creates the device and the pipeline. Returns false (and remembers why) on failure; never throws.
     bool ensure() {
         if (created) return true;
@@ -82,27 +82,33 @@ struct Engine {
         catch (...) { failed = true; failure = "unknown exception creating the device"; return false; }
     }
     // Classifies all points against the mesh with the device filter. out[i] in {0,1,2}. Returns false on any device failure or timeout (caller falls back).
-    bool classify(const std::vector<double>& v, const std::vector<uint32_t>& t, const Tree& tree, const std::vector<double>& pts, std::vector<uint32_t>* out, uint64_t timeoutNs, std::string* err) {
+    // plant (test-only, from the stage's `plant` knob, inert by default): "gpuCreateFail" makes the lazy device creation fail, "gpuOOM" asks the driver for an impossible allocation after the real ones,
+    // "gpuTimeout" waits on the fence for 1 ns (the in-flight work is then still running: its buffers must NOT be freed).
+    bool classify(const std::vector<double>& v, const std::vector<uint32_t>& t, const Tree& tree, const std::vector<double>& pts, std::vector<uint32_t>* out, uint64_t timeoutNs, std::string* err, const std::string& plant = std::string()) {
         try {
+            if (plant == "gpuCreateFail" && !created) { failed = true; failure = "planted failure of the lazy device creation"; }
             if (!ensure()) { *err = failure; return false; }
             const size_t nq = pts.size() / 3, n = t.size() / 3;
             if (!nq || !n) { out->assign(nq, 0); return true; }
             std::vector<float> qb(6 * nq); for (size_t i = 0; i < nq; i++) rayBox(&pts[3 * i], &qb[6 * i]);
-            gpu::Buf bV{}, bT{}, bQ{}, bQB{}, bNB{}, bL{}, bR{}, bI{}, bMQ{}, bMT{}, bO{};
+            gpu::Buf bV{}, bT{}, bQ{}, bQB{}, bNB{}, bL{}, bR{}, bI{}, bMQ{}, bMT{}, bO{}, bHuge{};
+            bool submitted = false;   // once work has been submitted, a failure may leave it running on the device: then nothing is freed (leaked on purpose) and the engine is poisoned
             auto freeAll = [&] { for (gpu::Buf* b : {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT, &bO}) if (b->size) ctx.release(*b); };
             try {
                 bV = ctx.alloc(v.size() * 8 + 8); bT = ctx.alloc(t.size() * 4 + 4); bQ = ctx.alloc(nq * 24 + 8); bQB = ctx.alloc(nq * 24 + 8); bNB = ctx.alloc(tree.nb.size() * 4 + 4);
                 bL = ctx.alloc(n * 4 + 4); bR = ctx.alloc(n * 4 + 4); bI = ctx.alloc(n * 4 + 4); bMQ = ctx.alloc(8); bMT = ctx.alloc(8); bO = ctx.alloc(nq * 4 + 4);
                 std::memcpy(bV.ptr, v.data(), v.size() * 8); std::memcpy(bT.ptr, t.data(), t.size() * 4); std::memcpy(bQ.ptr, pts.data(), nq * 24); std::memcpy(bQB.ptr, qb.data(), nq * 24);
                 std::memcpy(bNB.ptr, tree.nb.data(), tree.nb.size() * 4); std::memcpy(bL.ptr, tree.lc.data(), n * 4); std::memcpy(bR.ptr, tree.rc.data(), n * 4); std::memcpy(bI.ptr, tree.idx.data(), n * 4);
+                if (plant == "gpuOOM") bHuge = ctx.alloc((size_t)1 << 46);   // the driver must refuse: out of device memory mid-batch
                 const uint32_t pc[3] = {(uint32_t)nq, (uint32_t)n, 0u};
                 ctx.begin();
                 for (gpu::Buf* b : {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT}) ctx.upload(*b);
                 ctx.dispatch(kernel, {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT, &bO}, pc, (uint32_t)((nq + 63) / 64));
                 ctx.download(bO);
-                ctx.submitWait(timeoutNs);   // finite: a hung device must not make the stage unkillable
+                submitted = true;
+                ctx.submitWait(plant == "gpuTimeout" ? 1ull : timeoutNs);   // finite: a hung device must not make the stage unkillable
                 out->assign((uint32_t*)bO.ptr, (uint32_t*)bO.ptr + nq);
-            } catch (...) { freeAll(); throw; }
+            } catch (...) { if (!submitted) freeAll(); else leaked++; throw; }   // in-flight work may still read these buffers: never free them after a failed wait
             freeAll(); runs++; return true;
         } catch (const std::exception& e) { *err = e.what(); failed = true; failure = *err; return false; }   // a failed submission poisons the context: do not reuse it
         catch (...) { *err = "unknown exception in the device path"; failed = true; failure = *err; return false; }

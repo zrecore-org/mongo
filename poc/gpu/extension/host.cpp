@@ -935,6 +935,7 @@ int runContainsGpu(const string& dir, const string& which, size_t npts) {
         if (which == "cpu") { b.i32("gpuMinPoints", 1); b.str("engine", "cpu"); }
         if (which == "fail") b.str("plant", "gpuFail");
         if (which == "wrong") b.str("plant", "gpuWrong");
+        if (which == "createfail" || which == "oom" || which == "timeout") { b.i32("gpuMinPoints", 1); b.str("plant", which == "createfail" ? "gpuCreateFail" : which == "oom" ? "gpuOOM" : "gpuTimeout"); }
     });
     auto probe = [&] { auto q = run(L, spec([](bm::Builder& b) { b.str("probe", "config"); }), {docOf(0, "")}); string line; if (q.ok && !q.docs.empty()) {
         bm::Elem e; auto* p = reinterpret_cast<const uint8_t*>(q.docs[0].data()); bm::findField(p, q.docs[0].size(), "meshVolume", &e);

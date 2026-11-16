@@ -538,6 +538,7 @@ void applyGpuGate(Config& c) {
     logGateLine(c);
     if (!c.gpuReady && c.gpuRequired) throw ExtErr{36, "meshvolume: gpuRequired is true but the GPU is not ready: " + c.gpuReason};
 }
+string g_gpuLastFailure;   // why the device path was disabled (written under the engine mutex, read by the config probe)
 std::atomic<bool> g_gpuDisabled{false};   // the breaker: one device failure, timeout or shadow mismatch disables the device path until restart (a failed submission poisons the context)
 const char* engineName() {
 #ifdef MESHVOL_GPU
@@ -550,7 +551,7 @@ string configDoc() {
     bm::Builder b;
     b.boolean("gpuRequested", g_cfg.gpu).boolean("gpuRequired", g_cfg.gpuRequired).boolean("gpuProbed", g_cfg.gpuProbed)
         .boolean("gpuReady", g_cfg.gpuReady).str("engine", engineName()).str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes)
-        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints);
+        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure);
     return b.finish();
 }
 
@@ -573,7 +574,7 @@ int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const 
     #if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 2
     auto fallback = [&](const string& why) { g_gpuFallbacks++; (void)why; return 0; };   // mutant: breaker never opens
 #else
-    auto fallback = [&](const string& why) { g_gpuFallbacks++; g_gpuDisabled = true; logMsg("meshvolume: device path disabled, falling back to the CPU path: " + why); return 0; };
+    auto fallback = [&](const string& why) { g_gpuFallbacks++; g_gpuLastFailure = why; g_gpuDisabled = true; logMsg("meshvolume: device path disabled, falling back to the CPU path: " + why); return 0; };
 #endif
     if (spec.plant == "gpuFail") return fallback("planted device failure");
     gpupip::Engine& E = gpupip::engine();
@@ -582,7 +583,7 @@ int containsGpu(const meshvol::Packed& m, const std::vector<double>& pts, const 
     if (cancel(cancelArg)) return 2;
     gpupip::Tree tree = gpupip::buildTree(m.v, m.t);
     std::vector<uint32_t> dv; string err;
-    if (!E.classify(m.v, m.t, tree, pts, &dv, 10'000'000'000ull, &err)) return fallback(err);
+    if (!E.classify(m.v, m.t, tree, pts, &dv, 10'000'000'000ull, &err, spec.plant)) return fallback(err);
     if (spec.plant == "gpuWrong") for (size_t i = 0; i < n; i += 64) if (dv[i] != 2) dv[i] ^= 1;   // planted: wrong definite verdicts where the shadow check looks
     meshcontains::Bvh bvh; bvh.build(m.v, m.t);
     std::vector<uint32_t> scratch;
