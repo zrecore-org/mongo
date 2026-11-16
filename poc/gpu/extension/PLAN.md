@@ -53,3 +53,20 @@ Changes to the bars above; where they conflict, this wins.
 - **More mutants (one per case):** probe at static-init, probe error swallowed (`gpuReady=true` on failure), empty reason, each strictness case removed alone, `gpuRequired` default flipped to true, `engine` hard-coded to "gpu".
 - **Out of scope, one line each:** the process environment (`VK_DRIVER_FILES`, `VK_ICD_FILENAMES`, layers) can make the Vulkan loader load arbitrary libraries into `mongod` (security-review item); loader unload (the instance is destroyed, the loader is never `dlclose`d); initialize called twice (the probe result is cached per process).
 - Bar 2 says only that the gate does not disturb results; it is no evidence of GPU use.
+
+# MP14d: `$meshContains`, a stage whose GPU path is enabled by the MP14c gate (registered 2026-11-16 before any code)
+
+Why: with MP14c `gpu: true` only reports capability (`engine=cpu` always). This item gives the gate something to switch, and tests the G4 conclusion (2x only with large amortised batches, CPU default) inside a real `mongod`. Scope is deliberately small: one stage, one kernel that already exists and is verified (MP12c BVH point-in-solid, exactmesh `gpu/pip_bvh.comp`, Apache-2.0, copied here with provenance; Apache code inside this SSPL tree is allowed per `LICENSING.md`).
+
+Stage: `{$meshContains: {mesh: "<field>", points: "<field: array of [x,y,z] binary64>", output: "contains"}}`. Per document: array of verdicts, one per point: `IN`, `OUT` or `ON` (on the boundary), exact (the exact predicate decides; the GPU filter may only answer IN/OUT when certain and otherwise defers to the exact CPU path, as MP12c/MP13 do). The CPU path (exact orient3d / BVH walk) is the default and the oracle; the GPU path runs only when `gpuReady` and the batch is large enough (a configurable threshold, default conservative), per MP13's fallback, circuit breaker and shadow check design.
+
+## Bars
+1. CPU path correctness: verdicts equal the exact oracle on the MP12e corpus (60 models, 540k queries; hash `c2800183f077073a` over the verdict array as in MP12c) and on the unit corpora (spheres, tori, nested cavities, vertex-on-boundary cases); 0 wrong; errors per document as in `$meshVolume` (closed-mesh rules).
+2. GPU path (only when `gpu: true` and `ready`): verdict array byte-identical to the CPU path on the same corpus (same hash), 0 false definite, on the M1 (MoltenVK) and the 4060 Ti (Dozen in the container); with `gpu: false` or not ready the GPU code is never entered (counter 0, no Vulkan image loaded: MP14c bar 1 still holds).
+3. Fallback: a planted device failure (device lost, shader failure, timeout) mid-batch returns the CPU result for that batch with a log line, never a wrong or missing verdict; the breaker opens after N consecutive failures and stays open until restart; shadow check mismatch (planted) disables the GPU path and the stage returns the CPU result.
+4. Mutants (each caught by bars 1 to 3): GPU verdict trusted without certainty check, shadow check removed, breaker never opens, threshold ignored (GPU used for tiny batches), wrong sign/orientation in the CPU path, boundary treated as IN.
+5. Real `mongod` (win machine, container): bars 1 and 2 through an aggregation with `batchSize` large and small; server healthy after planted faults; on lavapipe `gpu: true` stays on CPU (`software device only`, so the GPU path is not entered); on the 4060 Ti via Dozen the GPU path runs and results are identical. Reported, not gating: any speed number (G4 says amortised only; no speed claim beyond a measured, labelled table).
+6. Memory and lifetime: Vulkan objects created lazily on first GPU-eligible batch, destroyed at extension shutdown (instance destroyed, loader never `dlclose`d); no leaks in the stage-object accounting of MP14a.
+
+Out of scope: booleans, distance queries, sharded topologies, signing/release builds, any change under `src/`.
+Order of work: (1) CPU path and bar 1 in the fake host; (2) GPU path and bars 2 to 4 on the M1; (3) real `mongod` runs on win (CPU first, then a GPU turn).
