@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // Minimal Vulkan compute harness for the GPU proofs of concept.
 // The Vulkan loader is opened with dlopen (no link-time dependency), so a missing or broken loader
 // makes init() return false and callers fall back to the CPU path.

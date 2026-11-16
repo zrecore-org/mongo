@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 3: GPU radix select (percentile / median) vs CPU std::nth_element and std::sort.
 //   ./run.sh poc3_select          (needs the GPU: run it through tools/with_gpu_lock.sh)
 #include "vkctx.h"

@@ -94,6 +94,10 @@ Exception (decided by the owner, 2026-11-15): the shaders in `shaders/` carry `S
 line `Copyright 2026 zrecore-org and exactmesh contributors`, so that they can be shared with `zrecore-org/pg-strom` and
 `zrecore-org/exactmesh`. Not relabelled: `shaders/f64soft.inc` and `shaders/softsum.comp`, which reimplement
 `mongo::DoubleDoubleSummation::addDouble` from `src/mongo/util/summation.h` (SSPL) and stay under the repository license
-until an owner decides otherwise. Host code (`*.cpp`) is not relabelled yet.
+until an owner decides otherwise. Host code (decided by the owner, 2026-11-15, same copyright line): the host files that are not derived from MongoDB source
+(`poc0_probe`, `poc1_df64`, `poc3_select`, `poc4_fallback`, `poc5_gather`, `poc7_sort`, `poc8_selftest`, `poc10_inplace`,
+`poc11_prewarm` `.cpp`, `rsel.h`, `vkctx.h`) carry the same Apache-2.0 header. Not relabelled, stay SSPL: `poc2_sum.cpp`,
+`poc3b_percentile.cpp`, `poc6_continuous_cpu.cpp`, `poc9_stddev.cpp` (ports or mirrors of MongoDB code), `poc12_f64soft.cpp`
+(checks the SSPL soft-f64 code), and everything under `extension/` (built against MongoDB headers).
 
 Parts of this work were written with the assistance of Claude (Anthropic), as recorded in the commit trailers.

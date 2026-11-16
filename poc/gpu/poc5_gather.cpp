@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // Cost of assembling a batch: gather scattered ~1000-double blocks into one contiguous buffer.
 #include <chrono>
 #include <cstdio>

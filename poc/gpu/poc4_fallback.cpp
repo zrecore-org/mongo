@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 4: fallback and failure handling, with no GPU involved. A mock device injects device-lost, OOM,
 // timeout and bad-result faults. Checks: whole-batch CPU rerun (never mixed results), circuit breaker
 // opening, exponential backoff, canary re-probe, and that an open breaker never touches the device.

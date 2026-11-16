@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 1: df64 add/mul/div/sqrt on the GPU. Writes inputs and results to out/ for verify_df64.py,
 // which checks them against an exact (arbitrary precision) oracle. Run once per shader variant.
 #include "vkctx.h"

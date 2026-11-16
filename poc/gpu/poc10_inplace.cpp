@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 10: in-place reads on a unified-memory GPU. Today's batch path copies scattered ~1000-value blocks into a mapped
 // Vulkan buffer (the "gather", POC 5). With VK_EXT_external_memory_host the server could instead decode blocks straight
 // into a page-aligned arena and hand that memory to the GPU as a buffer: no gather and no upload. Compares, for the

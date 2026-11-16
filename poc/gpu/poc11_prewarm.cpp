@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 11: does pre-warming help? Two questions, both measured with the radix-select query (4M values, 3 ranks):
 //  1. Startup: what does the first query after pipeline creation cost compared with the second? (A server would run
 //     the df64 self-test and one dummy query at startup to pay that once.)

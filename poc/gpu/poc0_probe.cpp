@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 0: dlopen-based Vulkan probe, compute smoke test, and CPU fallback on a missing loader.
 #include "vkctx.h"
 

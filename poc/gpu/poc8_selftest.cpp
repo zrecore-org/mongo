@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 8: startup known-answer self-test for df64 (the gate the plan requires before any GPU `$sum`).
 // Probes, each against an exact CPU result: fma, twoProd, the GPU-side double -> df64 split, and df64
 // mul/div/sqrt. Run with the variant tag ("precise" = fma twoProd, "nofma" = Dekker twoProd):

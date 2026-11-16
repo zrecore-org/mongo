@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // POC 7: GPU LSD radix sort of (u64 key prefix, u32 original index) pairs vs CPU std::sort of the same pairs.
 // This is the sorter-run / index-build case (plan item #3): the GPU sorts key prefixes only; equal prefixes
 // would still need a CPU tie-fixup on the full keys (not measured here). Run via tools/with_gpu_lock.sh.

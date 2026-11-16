@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 zrecore-org and exactmesh contributors
 // GPU radix select context shared by poc3_select and poc3b_percentile.
 #pragma once
 #include "vkctx.h"
