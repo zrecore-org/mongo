@@ -31,7 +31,7 @@ o=$(fhv libmeshvol_ext "{gpu: true, gpuRequired: false}"); chk "bar2 flow-style 
 
 echo "== bar 3: gpu true, no usable GPU"
 o=$(fh libmeshvol_noprobe "gpu: true"); show "$o"
-chk "bar3 loads, gpuReady=false, reason reported, no path in reason" "$(all "$(has "$o" 'OPTIONS-LOAD ok=1')" "$(has "$o" 'gpuReady=false')" "$(has "$o" 'reason="built without vulkan support"')" "$([ "$(echo "$o" | grep -c '/')" = 0 ] && echo ok || echo no)")"
+chk "bar3 loads, gpuReady=false, reason reported, no path in reason" "$(all "$(has "$o" 'OPTIONS-LOAD ok=1')" "$(has "$o" 'gpuReady=false')" "$(has "$o" 'reason="built without vulkan support"')" "$([ "$(echo "$o" | grep '^PROBE config' | grep -o 'reason="[^"]*"' | grep -c '/')" = 0 ] && echo ok || echo no)")"
 chk "bar3 corpus exact" "$(corpus_ok "$o")"
 o=$(fh libmeshvol_noprobe $'gpu: true\ngpuRequired: true'); echo "$o" | grep OPTIONS-LOAD
 chk "bar3 gpuRequired + no GPU: initialize fails with the reason" "$(all "$(has "$o" 'OPTIONS-LOAD ok=0')" "$(has "$o" 'not ready: built without vulkan support')")"
