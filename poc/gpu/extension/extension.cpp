@@ -672,7 +672,10 @@ string vulkanProbe() {
                 }
             }
         }
-        destroyInstance(inst, nullptr);
+        // The probe's VkInstance is deliberately NEVER destroyed: when the last instance goes the loader dlcloses the ICD (e.g. Mesa Dozen's libvulkan_dzn.so), and a driver thread that is still
+        // starting then executes unmapped code (SIGSEGV in a libc-started thread at server startup, found in the real mongod on the 4060 Ti, 2026-11-16). One idle instance for the life of the
+        // process keeps the ICD mapped. (destroyInstance stays resolved so a missing symbol is still reported.)
+        (void)destroyInstance;
     }
     b.i64("deviceCount", devCount).i64("hardwareDeviceCount", hwCount);
     b.boolean("ok", r == VK_SUCCESS).i64("elapsedMs", nowMs() - t0);
