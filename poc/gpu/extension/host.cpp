@@ -9,6 +9,7 @@
 #include "mongo/db/extension/public/api.h"
 
 #include "bson_min.h"
+#include "meshcontains_core.h"
 #include "oracle/exact.h"
 #include "oracle/mesh_io.h"
 
@@ -145,6 +146,7 @@ struct ExtLib {
     vector<MongoExtensionAPIVersion> advertised;
     const MongoExtension* ext = nullptr;
     const MongoExtensionAggStageDescriptor* desc = nullptr;
+    const MongoExtensionAggStageDescriptor* descContains = nullptr;   // MP14d
     bool ok = false;
 };
 const MongoExtensionAPIVersion kHostVersions[] = {{1, 0}};
@@ -189,8 +191,9 @@ ExtLib loadExtension(const string& path) {
     HPortal portal;
     st = take([&] { return L.ext->vtable->initialize(L.ext, &portal); });
     if (st.code != 0 || st.escaped) { L.error = "initialize failed: " + st.reason; return L; }
-    if (portal.registered.size() != 1) { L.error = "expected exactly one registered stage, got " + std::to_string(portal.registered.size()); return L; }
+    if (portal.registered.size() != 2) { L.error = "expected two registered stages ($meshVolume, $meshContains), got " + std::to_string(portal.registered.size()); return L; }
     L.desc = portal.registered[0];
+    L.descContains = portal.registered[1];
     L.stageName = sv(L.desc->vtable->get_name(L.desc));
     L.ok = true;
     return L;
@@ -261,12 +264,13 @@ struct RunOut {
 string stageBson(const string& specDoc) { bm::Builder b; b.head(bm::kDoc, "$meshVolume"); b.b.append(specDoc); return b.finish(); }
 string spec(const std::function<void(bm::Builder&)>& f) { bm::Builder b; f(b); return b.finish(); }
 
-RunOut runPipeline(const ExtLib& L, const string& stage, const vector<string>& input, HostCtx& ctx) {
+RunOut runPipeline(const ExtLib& L, const string& stage, const vector<string>& input, HostCtx& ctx, const MongoExtensionAggStageDescriptor* dsc = nullptr) {
+    if (!dsc) dsc = L.desc;
     RunOut R;
     const auto t0 = std::chrono::steady_clock::now();
     auto fail = [&](const char* where, Status s) { R.failedAt = where; R.err = s; return s.code != 0 || s.escaped; };
     MongoExtensionAggStageParseNode* parse = nullptr;
-    Status st = take([&] { return L.desc->vtable->parse(L.desc, bv(stage), &parse); });
+    Status st = take([&] { return dsc->vtable->parse(dsc, bv(stage), &parse); });
     if (fail("parse", st)) return R;
     MongoExtensionExpandedArrayContainer* cont = nullptr;
     st = take([&] { return parse->vtable->expand(parse, &cont); });
@@ -326,6 +330,8 @@ RunOut runPipeline(const ExtLib& L, const string& stage, const vector<string>& i
     return R;
 }
 RunOut run(const ExtLib& L, const string& specDoc, const vector<string>& input) { HostCtx c; return runPipeline(L, stageBson(specDoc), input, c); }
+string stageBsonContains(const string& specDoc) { bm::Builder b; b.head(bm::kDoc, "$meshContains"); b.b.append(specDoc); return b.finish(); }
+RunOut runContains(const ExtLib& L, const string& specDoc, const vector<string>& input) { HostCtx c; return runPipeline(L, stageBsonContains(specDoc), input, c, L.descContains); }
 
 // ------------------------------------------------------------------ BSON helpers for tests
 string packMesh(const mesh::Mesh& m) {
@@ -783,6 +789,89 @@ void finalAccounting(const ExtLib& L) {
 }
 }  // namespace
 
+
+// ------------------------------------------------------------------ MP14d: $meshContains plumbing tests (the verdicts themselves are checked against the exactmesh oracle in test_contains_core)
+string pointsArray(const vector<double>& pts) {
+    bm::Builder arr;
+    for (size_t i = 0; i < pts.size() / 3; i++) {
+        bm::Builder one; one.dbl("0", pts[3*i]).dbl("1", pts[3*i+1]).dbl("2", pts[3*i+2]);
+        arr.head(bm::kArray, std::to_string(i)); arr.b.append(one.finish());
+    }
+    return arr.finish();
+}
+string containsDocOf(int id, const string& packed, const string* pointsArr, const string* pointsBin) {
+    bm::Builder b; b.i32("_id", id); b.bin("mesh", packed.data(), packed.size());
+    if (pointsArr) { b.head(bm::kArray, "points"); b.b.append(*pointsArr); }
+    if (pointsBin) b.bin("points", pointsBin->data(), pointsBin->size());
+    return b.finish();
+}
+string outStr(const string& d, const char* field, int* errCode) {
+    bm::Elem e; *errCode = 0;
+    auto* p = reinterpret_cast<const uint8_t*>(d.data());
+    if (!bm::findField(p, d.size(), field, &e)) { *errCode = -1; return ""; }
+    if (e.type == bm::kString) return string(reinterpret_cast<const char*>(e.val + 4), e.vlen - 5);
+    bm::Elem er;
+    if (e.type == bm::kDoc && bm::findField(e.val, e.vlen, "error", &er) && er.type == bm::kDoc) { bm::Elem c; if (bm::findField(er.val, er.vlen, "code", &c) && c.type == bm::kInt32) std::memcpy(errCode, c.val, 4); }
+    return "";
+}
+int runContainsTests(const string& dir) {
+    ExtLib L = loadExtension(dir);
+    if (!L.ok) { std::printf("load failed: %s\n", L.error.c_str()); return 2; }
+    int fails = 0;
+    auto chk = [&](const string& name, bool ok, const string& extra = "") { std::printf("%s %s %s\n", ok ? "PASS" : "FAIL", name.c_str(), extra.c_str()); if (!ok) fails++; };
+    chk("both stages registered, names", L.stageName == "$meshVolume" && L.descContains && sv(L.descContains->vtable->get_name(L.descContains)) == "$meshContains");
+    mesh::Mesh bx = box(0, 0, 0, 1, 1, 1), sp = uvSphere(10, 14, 1.0, 0.25, 0.0, -0.125);
+    auto ref = [&](const mesh::Mesh& m, const vector<double>& pts) {
+        string v; for (size_t i = 0; i < pts.size() / 3; i++) { auto k = meshcontains::classify(m.v, m.t, &pts[3*i]); v += k == meshcontains::kIn ? 'I' : k == meshcontains::kOn ? 'B' : 'O'; } return v; };
+    vector<double> boxPts = {0.5,0.5,0.5, 2,0.5,0.5, -1,0.5,0.5, 0,0,0, 1,1,1, 0.5,0,0.5, 0,0.5,0.5, 0.5,0.5,1, 0.5,0.5,std::nextafter(1.0, 2.0), 0.5,0.5,std::nextafter(1.0, 0.0), 1,0.5,0.5, 0.25,1,0.75};
+    vector<double> spPts; { std::mt19937_64 g(7); for (int i = 0; i < 300; i++) { spPts.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.25); spPts.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.5); spPts.push_back((double)(g() >> 11) / 9007199254740992.0 * 3 - 1.5); } }
+    string bxArr = pointsArray(boxPts), spArr = pointsArray(spPts);
+    string spBin(reinterpret_cast<const char*>(spPts.data()), spPts.size() * 8);
+    vector<string> docs = {containsDocOf(1, packMesh(bx), &bxArr, nullptr), containsDocOf(2, packMesh(sp), &spArr, nullptr), containsDocOf(3, packMesh(sp), nullptr, &spBin)};
+    auto r = runContains(L, spec([](bm::Builder&) {}), docs);
+    chk("pipeline runs, 3 docs in order", r.ok && r.docs.size() == 3);
+    if (r.ok && r.docs.size() == 3) {
+        int ec; string v0 = outStr(r.docs[0], "contains", &ec), v1 = outStr(r.docs[1], "contains", &ec), v2 = outStr(r.docs[2], "contains", &ec);
+        chk("box verdicts (incl. vertices, faces, ulp neighbours) equal the core", v0 == ref(bx, boxPts), v0);
+        chk("sphere verdicts, BSON array points, equal the core", v1 == ref(sp, spPts));
+        chk("sphere verdicts, BinData points, equal the core", v2 == ref(sp, spPts));
+        chk("all three verdict classes occur", v1.find('I') != string::npos && v1.find('O') != string::npos && v0.find('B') != string::npos);
+        chk("input fields preserved, _id", [&] { bm::Elem e; auto* p = reinterpret_cast<const uint8_t*>(r.docs[0].data()); return bm::findField(p, r.docs[0].size(), "_id", &e) && e.type == bm::kInt32; }());
+    }
+    // errors are per document
+    string notArr = pointsArray({0.5, 0.5, 0.5}); mesh::Mesh open = bx; open.t.resize(open.t.size() - 3);
+    bm::Builder bad1; bad1.i32("_id", 10); bad1.bin("mesh", packMesh(bx).data(), packMesh(bx).size());                                          // missing points
+    bm::Builder bad2; bad2.i32("_id", 11); bad2.bin("mesh", packMesh(bx).data(), packMesh(bx).size()); bad2.str("points", "nope");             // points not an array
+    string shortBin(24 * 2 + 8, 'x');
+    bm::Builder bad3; bad3.i32("_id", 12); bad3.bin("mesh", packMesh(bx).data(), packMesh(bx).size()); bad3.bin("points", shortBin.data(), shortBin.size());  // bin length not a multiple of 24
+    string badPt; { bm::Builder one; one.dbl("0", 1).dbl("1", 2); bm::Builder arr; arr.head(bm::kArray, "0"); arr.b.append(one.finish()); badPt = arr.finish(); }
+    string okArr = pointsArray({0.5, 0.5, 0.5});
+    vector<string> errDocs = {bad1.finish(), bad2.finish(), bad3.finish(), containsDocOf(13, packMesh(bx), nullptr, nullptr),
+        [&] { bm::Builder b; b.i32("_id", 14); b.bin("mesh", packMesh(bx).data(), packMesh(bx).size()); b.head(bm::kArray, "points"); b.b.append(badPt); return b.finish(); }(),
+        containsDocOf(15, packMesh(open), &okArr, nullptr), containsDocOf(16, string("junk"), &okArr, nullptr), containsDocOf(17, packMesh(bx), &okArr, nullptr)};
+    auto re = runContains(L, spec([](bm::Builder&) {}), errDocs);
+    chk("error pipeline runs", re.ok && re.docs.size() == errDocs.size());
+    if (re.ok && re.docs.size() == errDocs.size()) {
+        const int want[] = {1, 15, 15, 1, 15, 8, 4, 0}; bool all = true; string got;
+        for (size_t i = 0; i < errDocs.size(); i++) { int ec; string v = outStr(re.docs[i], "contains", &ec); got += std::to_string(ec) + " "; if (i < 7 ? ec != want[i] : v != "I") all = false; }
+        chk("per-document errors: missing points 1, not array 15, bad bin 15, no points field 1, bad point 15, open mesh 8, junk 4, good doc ok", all, got);
+    }
+    // batching: 200 docs, one computeBatch
+    vector<string> many; string onePt = pointsArray({0.5, 0.5, 0.5}); for (int i = 0; i < 200; i++) many.push_back(containsDocOf(i, packMesh(bx), &onePt, nullptr));
+    auto rb = runContains(L, spec([](bm::Builder& b) { b.i32("batchSize", 1000); }), many);
+    chk("200 documents, 200 results in order", rb.ok && rb.docs.size() == 200);
+    // stage options and name mismatch
+    auto rs = runContains(L, spec([](bm::Builder& b) { b.str("points", "pts"); b.str("output", "verdict"); }), {[&] { bm::Builder b; b.i32("_id", 1); b.bin("mesh", packMesh(bx).data(), packMesh(bx).size()); b.head(bm::kArray, "pts"); b.b.append(onePt); return b.finish(); }()});
+    { int ec; chk("custom points and output field names", rs.ok && rs.docs.size() == 1 && outStr(rs.docs[0], "verdict", &ec) == "I"); }
+    auto ru = runContains(L, spec([](bm::Builder& b) { b.str("bogus", "x"); }), many);
+    chk("unknown field rejected at parse", !ru.ok);
+    // $meshVolume still works
+    auto rv = run(L, spec([](bm::Builder&) {}), {docOf(1, packMesh(bx))});
+    chk("$meshVolume unaffected", rv.ok && rv.docs.size() == 1 && parseOut(rv.docs[0]).exact == "1");
+    std::printf("FAILS %d\n", fails);
+    return fails ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
     const string mode = argc > 1 ? argv[1] : "all";
     const string dir = argc > 2 ? argv[2] : ".";
@@ -805,6 +894,8 @@ int main(int argc, char** argv) {
         std::printf("CORPUS total=%ld wrong=%ld exactMismatch=%ld roundingWrong=%ld errors=%ld\n", cs.total, cs.wrong, cs.wrongExact, cs.wrongRound, cs.errors);
         std::printf("MUTANT-SUMMARY lib=%s wrong=%ld\n", dir.c_str(), cs.wrong);
         return 0;
+    } else if (mode == "contains") {
+        return runContainsTests(dir);
     } else if (mode == "options") {  // MP14c: options <lib> <yaml text>: load with that extensionOptions text, report init result, config probe, corpus
         g_extOptions = argc > 3 ? argv[3] : "";
         ExtLib L = loadExtension(dir);

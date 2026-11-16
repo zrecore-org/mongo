@@ -10,6 +10,7 @@
 
 #include "bson_min.h"
 #include "meshvol_core.h"
+#include "meshcontains_core.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -141,22 +142,26 @@ const MongoExtensionByteBufVTable BufImpl::vt = {
 
 // ------------------------------------------------------------------ stage spec
 struct Spec {
-    string input = "mesh", output = "meshVolume", plant, probe;
+    bool contains = false;  // $meshContains (MP14d) instead of $meshVolume
+    string input = "mesh", output = "meshVolume", points = "points", plant, probe;
     uint32_t batchSize = 1024;
     int spinMs = 0;
     string raw;  // the validated sub-document, for serialize / clone
 
+    const char* stageName() const { return contains ? "$meshContains" : "$meshVolume"; }
     static Spec fromStageBson(const uint8_t* d, size_t len) {
-        if (!bm::validateDoc(d, len)) throw ExtErr{11, "$meshVolume: stage BSON is malformed"};
+        if (!bm::validateDoc(d, len)) throw ExtErr{11, "mesh stage: stage BSON is malformed"};
         bm::Elem e;
-        if (!bm::findField(d, len, "$meshVolume", &e) || e.type != bm::kDoc)
-            throw ExtErr{12, "$meshVolume: the stage specification must be a document"};
-        Spec s = fromSpec(e.val, e.vlen);
-        return s;
+        const bool contains = bm::findField(d, len, "$meshContains", &e);
+        if (!contains && !bm::findField(d, len, "$meshVolume", &e)) throw ExtErr{12, "mesh stage: unknown stage name"};
+        if (e.type != bm::kDoc) throw ExtErr{12, string(contains ? "$meshContains" : "$meshVolume") + ": the stage specification must be a document"};
+        return fromSpec(e.val, e.vlen, contains);
     }
-    static Spec fromSpec(const uint8_t* d, size_t len) {
+    static Spec fromSpec(const uint8_t* d, size_t len, bool contains = false) {
         if (!bm::validateDoc(d, len)) throw ExtErr{11, "$meshVolume: specification is malformed BSON"};
         Spec s;
+        s.contains = contains;
+        if (contains) s.output = "contains";
         s.raw.assign(reinterpret_cast<const char*>(d), len);
         const uint8_t* p = d + 4;
         const uint8_t* end = d + len - 1;
@@ -176,6 +181,7 @@ struct Spec {
             };
             if (e.name == "input") s.input = strVal();
             else if (e.name == "output") s.output = strVal();
+            else if (s.contains && e.name == "points") s.points = strVal();
             else if (e.name == "plant") s.plant = strVal();
             else if (e.name == "probe") s.probe = strVal();
             else if (e.name == "batchSize") {
@@ -193,7 +199,7 @@ struct Spec {
     }
     string toStageBson() const {
         bm::Builder b;
-        b.head(bm::kDoc, "$meshVolume");
+        b.head(bm::kDoc, stageName());
         b.b.append(raw);
         return b.finish();
     }
@@ -205,6 +211,7 @@ struct DocOut {
     int code = meshvol::kOk;
     meshvol::Result r;
     string probeDoc;  // when a probe replaced the volume
+    string verdicts;  // $meshContains: one char per point: 'O' out, 'I' in, 'B' on the boundary
 };
 using CancelFn = bool (*)(void*);
 
@@ -214,6 +221,71 @@ int64_t nowMs() {
 
 string vulkanProbe();
 string countersDoc();
+
+// ------------------------------------------------------------------ $meshContains (MP14d): points input and the CPU path
+// Points: a BSON array of [x, y, z] arrays (double, int32 or int64 up to 2^53), or a BinData subtype 0 with n*3 little-endian binary64. Returns kOk or kBadPoints.
+int readPoints(const bm::Elem& e, std::vector<double>* out) {
+    if (e.type == bm::kBinData) {
+        if (e.val[4] != 0) return meshvol::kBadSubtype;
+        const size_t n = e.vlen - 5;
+        if (n % 24 != 0) return meshvol::kBadPoints;
+        out->resize(n / 8);
+        std::memcpy(out->data(), e.val + 5, n);
+        for (double d : *out) if (!std::isfinite(d)) return meshvol::kNonFinite;
+        return meshvol::kOk;
+    }
+    if (e.type != bm::kArray) return meshvol::kBadPoints;
+    const uint8_t* p = e.val + 4;
+    const uint8_t* end = e.val + e.vlen - 1;
+    while (p < end) {
+        bm::Elem pt;
+        if (!bm::readElem(p, end, &pt)) return meshvol::kBadPoints;
+        p = pt.end;
+        if (pt.type != bm::kArray) return meshvol::kBadPoints;
+        const uint8_t* q = pt.val + 4;
+        const uint8_t* qe = pt.val + pt.vlen - 1;
+        int k = 0;
+        while (q < qe) {
+            bm::Elem c;
+            if (!bm::readElem(q, qe, &c)) return meshvol::kBadPoints;
+            q = c.end;
+            double v;
+            if (c.type == bm::kDouble) std::memcpy(&v, c.val, 8);
+            else if (c.type == bm::kInt32) { int32_t i; std::memcpy(&i, c.val, 4); v = i; }
+            else if (c.type == bm::kInt64) { int64_t i; std::memcpy(&i, c.val, 8); if (i > (1LL << 53) || i < -(1LL << 53)) return meshvol::kBadPoints; v = (double)i; }
+            else return meshvol::kBadPoints;
+            if (!std::isfinite(v) || k >= 3) return meshvol::kBadPoints;
+            out->push_back(v);
+            k++;
+        }
+        if (k != 3) return meshvol::kBadPoints;
+    }
+    return meshvol::kOk;
+}
+// CPU path: exact verdicts for every point. This is the default and the oracle for any other path.
+void containsCpu(const meshvol::Packed& m, const std::vector<double>& pts, string* verdicts) {
+    const size_t n = pts.size() / 3;
+    verdicts->resize(n);
+    for (size_t i = 0; i < n; i++) {
+        const auto v = meshcontains::classify(m.v, m.t, &pts[3 * i]);
+        (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
+    }
+}
+void containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o) {
+    if (!bm::validateDoc(d, len)) { o.code = meshvol::kBadDocument; return; }
+    bm::Elem e;
+    if (!bm::findField(d, len, spec.input, &e)) { o.code = meshvol::kMissingField; return; }
+    if (e.type != bm::kBinData) { o.code = meshvol::kNotBinData; return; }
+    if (e.val[4] != 0) { o.code = meshvol::kBadSubtype; return; }
+    meshvol::Packed m;
+    if ((o.code = meshvol::parsePacked(e.val + 5, e.vlen - 5, &m)) != meshvol::kOk) return;
+    if ((o.code = meshvol::checkClosed(m)) != meshvol::kOk) return;
+    bm::Elem pe;
+    if (!bm::findField(d, len, spec.points, &pe)) { o.code = meshvol::kMissingField; return; }
+    std::vector<double> pts;
+    if ((o.code = readPoints(pe, &pts)) != meshvol::kOk) return;
+    containsCpu(m, pts, &o.verdicts);
+}
 
 // Returns false if cancelled (deadline or kill) before every document was done.
 bool computeBatch(const Spec& spec, const DocIn* in, size_t n, DocOut* out, CancelFn cancel, void* cancelArg) {
@@ -237,6 +309,7 @@ bool computeBatch(const Spec& spec, const DocIn* in, size_t n, DocOut* out, Canc
     for (size_t i = 0; i < n; i++) {
         if ((i & 15) == 0 && cancel(cancelArg)) return false;
         DocOut& o = out[i];
+        if (spec.contains) { containsDoc(spec, in[i].data, in[i].len, o); continue; }
         if (!bm::validateDoc(in[i].data, in[i].len)) { o.code = meshvol::kBadDocument; continue; }
         bm::Elem e;
         if (!bm::findField(in[i].data, in[i].len, spec.input, &e)) { o.code = meshvol::kMissingField; continue; }
@@ -268,6 +341,9 @@ string outputDoc(const Spec& spec, const DocIn& in, const DocOut& o) {
         bm::Builder w;
         w.doc("error", er.finish());
         sub = w.finish();
+    } else if (spec.contains) {
+        out.str(spec.output, o.verdicts);   // a string of 'O' / 'I' / 'B', one per point
+        return out.finish();
     } else {
         bm::Builder w;
         w.str("exact", o.r.exact).dbl("approx", o.r.approx);
@@ -614,7 +690,7 @@ const MongoExtensionExecAggStageVTable ExecStage::vt = {
             res->resultDocument.bytes.buf = buf;
         });
     },
-    /*get_name*/ [](const MongoExtensionExecAggStage*) -> MongoExtensionByteView { return {reinterpret_cast<const uint8_t*>("$meshVolume"), 11}; },
+    /*get_name*/ [](const MongoExtensionExecAggStage* s) -> MongoExtensionByteView { const char* n = static_cast<const ExecStage*>(s)->spec.stageName(); return {reinterpret_cast<const uint8_t*>(n), std::strlen(n)}; },
     /*create_metrics*/ [](const MongoExtensionExecAggStage*, MongoExtensionOperationMetrics** m) -> MongoExtensionStatus* { *m = nullptr; return &g_ok; },
     /*set_source*/
     [](MongoExtensionExecAggStage* s, MongoExtensionExecAggStage* src) -> MongoExtensionStatus* {
@@ -653,7 +729,7 @@ struct LogicalStage : MongoExtensionLogicalAggStage {
 };
 const MongoExtensionLogicalAggStageVTable LogicalStage::vt = {
     /*destroy*/ [](MongoExtensionLogicalAggStage* s) { delete static_cast<LogicalStage*>(s); },
-    /*get_name*/ [](const MongoExtensionLogicalAggStage*) -> MongoExtensionByteView { return {reinterpret_cast<const uint8_t*>("$meshVolume"), 11}; },
+    /*get_name*/ [](const MongoExtensionLogicalAggStage* s) -> MongoExtensionByteView { const char* n = static_cast<const LogicalStage*>(s)->spec.stageName(); return {reinterpret_cast<const uint8_t*>(n), std::strlen(n)}; },
     /*serialize*/
     [](const MongoExtensionLogicalAggStage* s, MongoExtensionByteBuf** out) -> MongoExtensionStatus* {
         return guard([&] { *out = new BufImpl(static_cast<const LogicalStage*>(s)->spec.toStageBson()); });
@@ -663,8 +739,9 @@ const MongoExtensionLogicalAggStageVTable LogicalStage::vt = {
         return guard([&] {
             bm::Builder inner;
             inner.i32("batchSize", (int32_t)static_cast<const LogicalStage*>(s)->spec.batchSize);
+            if (static_cast<const LogicalStage*>(s)->spec.contains) inner.str("engine", "cpu");  // MP14d: no GPU kernel yet
             bm::Builder b;
-            b.doc("$meshVolume", inner.finish());
+            b.doc(static_cast<const LogicalStage*>(s)->spec.stageName(), inner.finish());
             *out = new BufImpl(b.finish());
         });
     },
@@ -697,7 +774,7 @@ struct AstNode : MongoExtensionAggStageAstNode {
 };
 const MongoExtensionAggStageAstNodeVTable AstNode::vt = {
     /*destroy*/ [](MongoExtensionAggStageAstNode* n) { delete static_cast<AstNode*>(n); },
-    /*get_name*/ [](const MongoExtensionAggStageAstNode*) -> MongoExtensionByteView { return {reinterpret_cast<const uint8_t*>("$meshVolume"), 11}; },
+    /*get_name*/ [](const MongoExtensionAggStageAstNode* s) -> MongoExtensionByteView { const char* n = static_cast<const AstNode*>(s)->spec.stageName(); return {reinterpret_cast<const uint8_t*>(n), std::strlen(n)}; },
     /*get_properties*/
     [](const MongoExtensionAggStageAstNode*, MongoExtensionByteBuf** out) -> MongoExtensionStatus* {
         return guard([&] {
@@ -755,12 +832,12 @@ struct ParseNode : MongoExtensionAggStageParseNode {
 };
 const MongoExtensionAggStageParseNodeVTable ParseNode::vt = {
     /*destroy*/ [](MongoExtensionAggStageParseNode* n) { delete static_cast<ParseNode*>(n); },
-    /*get_name*/ [](const MongoExtensionAggStageParseNode*) -> MongoExtensionByteView { return {reinterpret_cast<const uint8_t*>("$meshVolume"), 11}; },
+    /*get_name*/ [](const MongoExtensionAggStageParseNode* s) -> MongoExtensionByteView { const char* n = static_cast<const ParseNode*>(s)->spec.stageName(); return {reinterpret_cast<const uint8_t*>(n), std::strlen(n)}; },
     /*get_query_shape*/
-    [](const MongoExtensionAggStageParseNode*, const MongoExtensionHostQueryShapeOpts*, MongoExtensionByteBuf** out) -> MongoExtensionStatus* {
+    [](const MongoExtensionAggStageParseNode* n, const MongoExtensionHostQueryShapeOpts*, MongoExtensionByteBuf** out) -> MongoExtensionStatus* {
         return guard([&] {  // POC simplification: shape is the stage name with an empty spec (no literal serialization via the host opts)
             bm::Builder inner, b;
-            b.doc("$meshVolume", inner.finish());
+            b.doc(static_cast<const ParseNode*>(n)->spec.stageName(), inner.finish());
             *out = new BufImpl(b.finish());
         });
     },
@@ -784,21 +861,24 @@ const MongoExtensionAggStageParseNodeVTable ParseNode::vt = {
 
 struct Descriptor : MongoExtensionAggStageDescriptor {
     static const MongoExtensionAggStageDescriptorVTable vt;
-    Descriptor() : MongoExtensionAggStageDescriptor{&vt} {}
+    bool contains;
+    explicit Descriptor(bool c) : MongoExtensionAggStageDescriptor{&vt}, contains(c) {}
 };
 const MongoExtensionAggStageDescriptorVTable Descriptor::vt = {
-    /*get_name*/ [](const MongoExtensionAggStageDescriptor*) -> MongoExtensionByteView { return {reinterpret_cast<const uint8_t*>("$meshVolume"), 11}; },
+    /*get_name*/ [](const MongoExtensionAggStageDescriptor* d) -> MongoExtensionByteView { return static_cast<const Descriptor*>(d)->contains ? MongoExtensionByteView{reinterpret_cast<const uint8_t*>("$meshContains"), 13} : MongoExtensionByteView{reinterpret_cast<const uint8_t*>("$meshVolume"), 11}; },
     /*get_client_type*/ [](const MongoExtensionAggStageDescriptor*) -> MongoExtensionClientType { return kMongoExtensionClientTypeAny; },
     /*parse*/
-    [](const MongoExtensionAggStageDescriptor*, MongoExtensionByteView bson, MongoExtensionAggStageParseNode** out) -> MongoExtensionStatus* {
+    [](const MongoExtensionAggStageDescriptor* d, MongoExtensionByteView bson, MongoExtensionAggStageParseNode** out) -> MongoExtensionStatus* {
         return guard([&] {
             Spec s = Spec::fromStageBson(bson.data, bson.len);
+            if (s.contains != static_cast<const Descriptor*>(d)->contains) throw ExtErr{12, "mesh stage: the specification names a different stage than the descriptor"};
             if (s.plant == "throwParse") throw std::runtime_error("planted C++ exception in parse");
             *out = new ParseNode(std::move(s));
         });
     },
 };
-Descriptor g_descriptor;
+Descriptor g_descriptor{false};
+Descriptor g_descriptorContains{true};
 
 const MongoExtensionVTable g_extVt = {
     /*initialize*/
@@ -813,8 +893,8 @@ const MongoExtensionVTable g_extVt = {
 #endif
             applyGpuGate(c);
             g_cfg = c;
-            MongoExtensionStatus* s = portal->vtable->register_stage_descriptor(portal, &g_descriptor);
-            consume(s);
+            consume(portal->vtable->register_stage_descriptor(portal, &g_descriptor));
+            consume(portal->vtable->register_stage_descriptor(portal, &g_descriptorContains));
         });
     },
 };

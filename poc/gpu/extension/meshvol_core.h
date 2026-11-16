@@ -19,14 +19,14 @@ using BigInt = boost::multiprecision::cpp_int;
 
 enum Err : int {
     kOk = 0, kMissingField = 1, kNotBinData = 2, kBadSubtype = 3, kBadHeader = 4, kSizeMismatch = 5, kIndexRange = 6, kNonFinite = 7,
-    kOpenMesh = 8, kNonManifold = 9, kTooLarge = 10, kInternal = 11, kInterrupted = 12, kBadDocument = 13, kEmpty = 14,
+    kOpenMesh = 8, kNonManifold = 9, kTooLarge = 10, kInternal = 11, kInterrupted = 12, kBadDocument = 13, kEmpty = 14, kBadPoints = 15,
 };
 inline const char* errName(int c) {
     static const char* n[] = {"ok", "missing field", "field is not BinData", "BinData subtype is not 0", "bad mesh header", "payload size does not match header",
                               "triangle index out of range", "non-finite coordinate", "open mesh (a directed edge has no reverse)",
                               "non-manifold or degenerate triangle (directed edge used twice or repeated vertex)", "mesh too large",
-                              "internal error", "interrupted or past deadline", "malformed BSON document", "empty mesh"};
-    return (c >= 0 && c <= 14) ? n[c] : "?";
+                              "internal error", "interrupted or past deadline", "malformed BSON document", "empty mesh", "bad points field"};
+    return (c >= 0 && c <= 15) ? n[c] : "?";
 }
 
 constexpr uint32_t kMagic = 0x3148534d;
