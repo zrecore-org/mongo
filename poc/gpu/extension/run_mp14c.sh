@@ -23,7 +23,7 @@ chk "bar1 corpus exact (default off)" "$(corpus_ok "$(fh libmeshvol_ext "")")"
 
 echo "== bar 2: gpu true, working Vulkan (hardware device on this host)"
 o=$(fhv libmeshvol_ext "gpu: true"); show "$o"
-chk "bar2 gpuReady=true, one probe, engine=cpu, hardware reason" "$(all "$(has "$o" 'gpuReady=true')" "$(has "$o" 'vulkanProbes=1')" "$(has "$o" 'engine="cpu"')" "$(has "$o" 'reason="hardware device present"')")"
+chk "bar2 gpuReady=true, one probe, engine=gpu (MP14d: the device path is available), hardware reason" "$(all "$(has "$o" 'gpuReady=true')" "$(has "$o" 'vulkanProbes=1')" "$(has "$o" 'engine="gpu"')" "$(has "$o" 'reason="hardware device present"')")"
 chk "bar2 corpus exact, same oracle as default off (gate does not disturb results; not evidence of GPU use)" "$(corpus_ok "$o")"
 o=$(fhv libmeshvol_ext $'gpu: true\ngpuRequired: true'); show "$o"
 chk "bar2 gpuRequired true with a ready GPU loads" "$(all "$(has "$o" 'OPTIONS-LOAD ok=1')" "$(has "$o" 'gpuReady=true')")"

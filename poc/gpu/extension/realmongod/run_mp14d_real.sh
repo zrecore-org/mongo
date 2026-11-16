@@ -1,7 +1,9 @@
 #!/bin/bash
 # MP14d on the real fork mongod, CPU path: starts mongod with the extension (extensionOptions per case), runs test_mp14d.py, stops it. Usage: run_mp14d_real.sh <mongod> <so> <real60 dir>
 set -u
-ulimit -c 0
+# WSL2 core dumps (investigated 2026-11-16): the WSL core_pattern is a PIPE handler, which ignores RLIMIT_CORE=0; only a limit of exactly 1 byte stops it. `ulimit -c 0` must NOT be used (it would
+# re-enable dumps if the container runs with --ulimit core=1:1). bash cannot express 1 byte, so prlimit does it:
+prlimit --core=1:1 --pid $$ 2>/dev/null || true
 H="$(cd "$(dirname "$0")" && pwd)"; MONGOD="$1"; SO="$2"; D="$3"; PY="${PY:-$H/venv/bin/python}"; FAILS=0
 want() { [ -z "${CASES:-}" ] || echo " $CASES " | grep -q " $1 "; }
 case_run() {  # name, extensionOptions block, env assignments for the test (e.g. "EXPECT_GPU=1 MP14D_GPU_MIN=1")
@@ -19,6 +21,8 @@ EOT
   local MP=$!; local up=no
   for i in $(seq 1 90); do grep -q "Waiting for connections" "$R/mongod.log" 2>/dev/null && { up=yes; break; }; kill -0 $MP 2>/dev/null || break; sleep 1; done
   if [ "$up" = yes ]; then
+    grep "Max core file size" /proc/$MP/limits | sed 's/^/core limit of the server: /'
+    grep -q "Max core file size *1 *1 *bytes" /proc/$MP/limits || echo "WARN: the server's core limit is not 1 byte: a crash can write a multi-GB WSL dump (start the container with --ulimit core=1:1)"
     grep -c "libvulkan" /proc/$MP/maps | sed 's/^/vulkan-library-mappings: /'
     grep "meshvolume: gpu" "$R/mongod.log" | cut -c1-300 | head -2
     env $envs timeout 1500 "$PY" "$H/test_mp14d.py" 27555 "$D" 2>&1 | tee "$R/test.out"

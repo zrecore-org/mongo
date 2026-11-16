@@ -2,7 +2,9 @@
 # MP14d, real fork mongod, CPU-path and software-device cases (no GPU turn). ubuntu:24.04 x86_64, --ulimit core=0; /m = mongod dir (ro), /in = FileTransfers\mongo (ro), /w = volume g5-w.
 # Cases: cpu_default; gpu_lavapipe (gpu: true on lavapipe = software device, stage option gpuMinPoints 1: the device path must NOT be used, results identical, counters 0).
 set -u
-ulimit -c 0
+# WSL2 core dumps (investigated 2026-11-16): the WSL core_pattern is a PIPE handler, which ignores RLIMIT_CORE=0; only a limit of exactly 1 byte stops it. `ulimit -c 0` must NOT be used (it would
+# re-enable dumps if the container runs with --ulimit core=1:1). bash cannot express 1 byte, so prlimit does it:
+prlimit --core=1:1 --pid $$ 2>/dev/null || true
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq >/dev/null
 apt-get install -y -qq g++ gcc python3-venv python3-pip libcurl4 libssl3 liblzma5 ca-certificates libvulkan1 mesa-vulkan-drivers >/dev/null 2>&1

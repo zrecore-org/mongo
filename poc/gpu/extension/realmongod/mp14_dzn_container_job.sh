@@ -3,7 +3,9 @@
 # No mesa-vulkan-drivers (no lavapipe): the only Vulkan device is the dzn one. Case gpu_dzn: gpu true, gpuMinPoints 1, EXPECT_GPU=1: the device path must be used for the 60 models, results equal the oracle
 # (hash ae59d9976297a67b), then a planted wrong-verdict run must be caught by the shadow check and disable the device.
 set -u
-ulimit -c 0
+# WSL2 core dumps (investigated 2026-11-16): the WSL core_pattern is a PIPE handler, which ignores RLIMIT_CORE=0; only a limit of exactly 1 byte stops it. `ulimit -c 0` must NOT be used (it would
+# re-enable dumps if the container runs with --ulimit core=1:1). bash cannot express 1 byte, so prlimit does it:
+prlimit --core=1:1 --pid $$ 2>/dev/null || true
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq >/dev/null
 apt-get install -y -qq g++ gcc python3-venv python3-pip libcurl4 libssl3 liblzma5 ca-certificates libvulkan1 vulkan-tools >/dev/null 2>&1

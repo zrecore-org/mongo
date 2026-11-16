@@ -23,7 +23,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <deque>
-#include <dlfcn.h>
+#include "platform_compat.h"
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -35,7 +35,7 @@
 #include <vulkan/vulkan_core.h>
 #endif
 
-#define EXPORT __attribute__((visibility("default")))
+#define EXPORT MESHVOL_EXPORT
 
 // Symbol-conflict probe: a plain global function that a host could also define (see host.cpp). With default visibility it would be an exported,
 // interposable symbol; with -fvisibility=hidden + the export list it is not.
@@ -547,6 +547,10 @@ void logMsg(const string& msg) {
 void logGateLine(const Config& c) {
     logMsg(string("meshvolume: gpu requested=") + (c.gpu ? "true" : "false") + " ready=" + (c.gpuReady ? "true" : "false") + " engine=" + (c.gpu && c.gpuReady ? "gpu" : "cpu") + " reason=" + c.gpuReason);
 }
+#if defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 7
+// mutant: opens the loader from a static initialiser, before the config is parsed (the probe counter stays 0)
+struct EarlyOpen { EarlyOpen() { pc::openLib("libvulkan.1.dylib"); pc::openLib("/opt/homebrew/lib/libvulkan.1.dylib"); pc::openLib("libvulkan.so.1"); pc::openLib("vulkan-1.dll"); } } g_earlyOpen;
+#endif
 // Applies the gate: only when gpu is true does the extension touch Vulkan (one probe, at initialize, cached for the process).
 void applyGpuGate(Config& c) {
     if (!c.gpu) { c.gpuReason = "not requested"; logGateLine(c); return; }
@@ -676,15 +680,19 @@ string vulkanProbe() {
     bm::Builder b;
 #ifdef MESHVOL_VULKAN_PROBE
     const int64_t t0 = nowMs();
-    void* h = nullptr;
+    pc::Lib h = nullptr;
+#ifdef _WIN32
+    const char* cands[] = {"vulkan-1.dll"};
+#else
     const char* cands[] = {"libvulkan.1.dylib", "/opt/homebrew/lib/libvulkan.1.dylib", "/usr/local/lib/libvulkan.1.dylib", "libvulkan.so.1"};
+#endif
     const char* used = "";
-    for (const char* c : cands) if ((h = dlopen(c, RTLD_NOW | RTLD_LOCAL))) { used = c; break; }
+    for (const char* c : cands) if ((h = pc::openLib(c))) { used = c; break; }
     b.boolean("loaderLoaded", h != nullptr).str("loader", used);
-    if (!h) { const char* de = dlerror(); b.boolean("ok", false).str("detail", de ? de : "dlopen failed"); return b.finish(); }   // dlerror() clears itself: read it once
-    auto createInstance = (PFN_vkCreateInstance)dlsym(h, "vkCreateInstance");
-    auto destroyInstance = (PFN_vkDestroyInstance)dlsym(h, "vkDestroyInstance");
-    auto enumExt = (PFN_vkEnumerateInstanceExtensionProperties)dlsym(h, "vkEnumerateInstanceExtensionProperties");
+    if (!h) { const std::string de = pc::libError(); b.boolean("ok", false).str("detail", de); return b.finish(); }
+    auto createInstance = (PFN_vkCreateInstance)pc::sym(h, "vkCreateInstance");
+    auto destroyInstance = (PFN_vkDestroyInstance)pc::sym(h, "vkDestroyInstance");
+    auto enumExt = (PFN_vkEnumerateInstanceExtensionProperties)pc::sym(h, "vkEnumerateInstanceExtensionProperties");
     if (!createInstance || !destroyInstance || !enumExt) { b.boolean("ok", false).str("detail", "loader symbols missing"); return b.finish(); }
     uint32_t n = 0;
     enumExt(nullptr, &n, nullptr);
@@ -706,8 +714,8 @@ string vulkanProbe() {
     b.i32("vkResult", (int32_t)r).boolean("portabilityEnumeration", portability);
     int64_t devCount = 0, hwCount = 0;
     if (r == VK_SUCCESS) {
-        auto enumDev = (PFN_vkEnumeratePhysicalDevices)dlsym(h, "vkEnumeratePhysicalDevices");
-        auto getProps = (PFN_vkGetPhysicalDeviceProperties)dlsym(h, "vkGetPhysicalDeviceProperties");
+        auto enumDev = (PFN_vkEnumeratePhysicalDevices)pc::sym(h, "vkEnumeratePhysicalDevices");
+        auto getProps = (PFN_vkGetPhysicalDeviceProperties)pc::sym(h, "vkGetPhysicalDeviceProperties");
         uint32_t nd = 0;
         if (enumDev && getProps && enumDev(inst, &nd, nullptr) == VK_SUCCESS && nd > 0) {
             std::vector<VkPhysicalDevice> devs(nd);

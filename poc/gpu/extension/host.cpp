@@ -5,7 +5,11 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
+#ifdef _WIN32
+#include <psapi.h>
+#endif
 #include <cstring>
+#include "platform_compat.h"
 #include "mongo/db/extension/public/api.h"
 
 #include "bson_min.h"
@@ -24,15 +28,16 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
-#include <dlfcn.h>
 #include <functional>
+#ifndef _WIN32
 #include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 #include <thread>
 #include <random>
 #include <string>
-#include <sys/wait.h>
 #include <thread>
-#include <unistd.h>
 #include <vector>
 
 using std::string;
@@ -117,6 +122,9 @@ int vulkanImages() {
     int n = 0;
 #ifdef __APPLE__
     for (uint32_t i = 0; i < _dyld_image_count(); i++) { const char* nm = _dyld_get_image_name(i); if (nm && (strstr(nm, "libvulkan") || strstr(nm, "MoltenVK"))) n++; }
+#elif defined(_WIN32)
+    HMODULE mods[1024]; DWORD need = 0;
+    if (EnumProcessModules(GetCurrentProcess(), mods, sizeof mods, &need)) for (DWORD i = 0; i < need / sizeof(HMODULE) && i < 1024; i++) { char nm[MAX_PATH]; if (GetModuleFileNameA(mods[i], nm, MAX_PATH) && (strstr(nm, "vulkan-1") || strstr(nm, "nvoglv") || strstr(nm, "nvlddmkm") || strstr(nm, "nvgpucomp"))) n++; }
 #else
     FILE* f = fopen("/proc/self/maps", "r");
     char line[4096];
@@ -169,9 +177,9 @@ bool selectCompatible(const vector<MongoExtensionAPIVersion>& ext, MongoExtensio
 ExtLib loadExtension(const string& path) {
     ExtLib L;
     L.path = path;
-    L.h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);  // same flags as src/mongo/platform/shared_library_posix.cpp:39
-    if (!L.h) { L.error = string("dlopen failed: ") + dlerror(); return L; }
-    auto getVersions = (get_mongodb_extension_versions_t)dlsym(L.h, GET_MONGODB_EXTENSION_VERSIONS_SYMBOL);
+    L.h = pc::openLib(path.c_str());
+    if (!L.h) { L.error = string("library load failed: ") + pc::libError(); return L; }
+    auto getVersions = (get_mongodb_extension_versions_t)pc::sym(L.h, GET_MONGODB_EXTENSION_VERSIONS_SYMBOL);
     if (!getVersions) { L.error = "symbol get_mongodb_extension_versions not found"; return L; }
     MongoExtensionAPIVersionVector vec{0, nullptr};
     try { getVersions(&vec); } catch (...) { g_escapes++; L.error = "exception escaped get_mongodb_extension_versions"; return L; }
@@ -180,7 +188,7 @@ ExtLib loadExtension(const string& path) {
     if (!vec.versions) { L.error = "the extension published a null API version list"; return L; }
     string err;
     if (!selectCompatible(L.advertised, &L.negotiated, &err)) { L.error = err; return L; }
-    auto getExt = (get_mongo_extension_t)dlsym(L.h, GET_MONGODB_EXTENSION_SYMBOL);
+    auto getExt = (get_mongo_extension_t)pc::sym(L.h, GET_MONGODB_EXTENSION_SYMBOL);
     if (!getExt) { L.error = "symbol get_mongodb_extension not found"; return L; }
     Status st = take([&] { return getExt(L.negotiated, &g_hostServices, &L.ext); });
     if (st.code != 0 || st.escaped) { L.error = "get_mongodb_extension failed: " + st.reason; return L; }
@@ -729,6 +737,9 @@ int childRun(const ExtLib& L, const string& specDoc, bool catchEscape) {
     return r.ok ? 0 : 3;
 }
 // Runs f in a forked child; returns how the child ended.
+#ifdef _WIN32
+string forkRun(const std::function<int()>&) { return "SKIPPED on Windows (no fork; the crash-survival bars run on POSIX hosts)"; }
+#else
 string forkRun(const std::function<int()>& f) {
     std::fflush(stdout);
     pid_t p = fork();
@@ -738,6 +749,7 @@ string forkRun(const std::function<int()>& f) {
     if (WIFSIGNALED(st)) return "killed by signal " + std::to_string(WTERMSIG(st)) + " (" + strsignal(WTERMSIG(st)) + ")";
     return "exited normally with code " + std::to_string(WEXITSTATUS(st));
 }
+#endif
 
 void bar5(const ExtLib& L, const string& dir) {
     // (a) planted crash: a segfault in the extension takes the host process down. Demonstrated in a forked child so the harness survives.
@@ -968,7 +980,11 @@ int runContainsGpu(const string& dir, const string& which, size_t npts) {
         auto spc = spec([](bm::Builder& b) { b.i32("gpuMinPoints", 1); });
         const int threads = which == "concurrent" ? 6 : 1, runsEach = which == "concurrent" ? 6 : (getenv("MP14D_REPEAT") ? atoi(getenv("MP14D_REPEAT")) : 150);
         std::atomic<int> bad{0}, done{0};
+        #ifdef _WIN32
+        auto rss = [] { PROCESS_MEMORY_COUNTERS pmc; GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof pmc); return (long)pmc.PeakWorkingSetSize; };   // bytes
+#else
         auto rss = [] { struct rusage ru; getrusage(RUSAGE_SELF, &ru); return (long)ru.ru_maxrss; };   // bytes on macOS, KiB on Linux
+#endif
         const long rss0 = rss();
         std::vector<std::thread> th;
         for (int t = 0; t < threads; t++) th.emplace_back([&, t] { for (int k = 0; k < runsEach; k++) {

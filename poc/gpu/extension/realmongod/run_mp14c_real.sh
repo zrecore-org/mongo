@@ -2,7 +2,9 @@
 # MP14c, real fork mongod, CPU only. Usage: ./run_mp14c_real.sh <mongod> <libmeshvol_ext.so>. Cases: extensionOptions absent / {} / gpu false (must start, requested=false, no Vulkan library mapped),
 # gpu true (software device on lavapipe: starts, ready=false), gpu true + gpuRequired true (must REFUSE to start, reason logged), unknown option (must refuse). Port 27555, 127.0.0.1 only.
 set -u
-ulimit -c 0   # a refused load is a fatal assertion (SIGABRT); without this WSL writes a ~2 GB core dump per refusal to C:\
+# WSL2 core dumps (investigated 2026-11-16): the WSL core_pattern is a PIPE handler, which ignores RLIMIT_CORE=0; only a limit of exactly 1 byte stops it. `ulimit -c 0` must NOT be used (it would
+# re-enable dumps if the container runs with --ulimit core=1:1). bash cannot express 1 byte, so prlimit does it:
+prlimit --core=1:1 --pid $$ 2>/dev/null || true
 H="$(cd "$(dirname "$0")" && pwd)"; MONGOD="$1"; SO="$2"; FAILS=0
 chk() { if [ "$2" = ok ]; then echo "PASS $1"; else echo "FAIL $1"; FAILS=$((FAILS+1)); fi; }
 yes_if() { grep -q -- "$2" "$1" 2>/dev/null && echo ok || echo no; }
@@ -22,6 +24,8 @@ EOT
   local MP=$!; local up=no
   for i in $(seq 1 60); do grep -q "Waiting for connections" "$R/mongod.log" 2>/dev/null && { up=yes; break; }; kill -0 $MP 2>/dev/null || break; sleep 1; done
   if [ "$up" = yes ]; then
+    grep "Max core file size" /proc/$MP/limits | sed 's/^/core limit of the server: /'
+    grep -q "Max core file size *1 *1 *bytes" /proc/$MP/limits || echo "WARN: the server's core limit is not 1 byte: a crash can write a multi-GB WSL dump (start the container with --ulimit core=1:1)"
     grep -c "libvulkan" /proc/$MP/maps | sed 's/^/vulkan-library-mappings: /' | tee "$R/maps.count"
   fi
   grep "meshvolume: gpu" "$R/mongod.log" | cut -c1-400 | head -3
