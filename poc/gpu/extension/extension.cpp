@@ -266,8 +266,12 @@ int readPoints(const bm::Elem& e, std::vector<double>* out) {
 void containsCpu(const meshvol::Packed& m, const std::vector<double>& pts, string* verdicts) {
     const size_t n = pts.size() / 3;
     verdicts->resize(n);
+    meshcontains::Bvh bvh;
+    const bool useBvh = n >= 8;                     // a tree pays for itself only with several points; the verdicts are identical either way
+    if (useBvh) bvh.build(m.v, m.t);
+    std::vector<uint32_t> scratch;
     for (size_t i = 0; i < n; i++) {
-        const auto v = meshcontains::classify(m.v, m.t, &pts[3 * i]);
+        const auto v = useBvh ? meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch) : meshcontains::classify(m.v, m.t, &pts[3 * i]);
         (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
     }
 }

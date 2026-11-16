@@ -3,7 +3,7 @@
 // integer-block cases), ulp neighbours of vertices, and ray-degenerate points (same y and z as a vertex, x shifted). Exit 0 only if 0 disagreements.
 // Mutants: -DMESHCONTAINS_MUT_NO_TIEBREAK (no symbolic tie-break) and -DMUT_BOUNDARY_IN (boundary reported as inside) must each produce disagreements.
 #include "meshcontains_core.h"
-#include "harness/pip.h"
+#include "cpu/pip_hardened.h"
 #include "gpu/pip_cases.h"
 #include <cstdio>
 
@@ -15,6 +15,11 @@ int main() {
     meshes.push_back({"block 3", block(3)});
     meshes.push_back({"block 4 scaled 2^-20 offset", mapped(block(4), -20, 0.25, -0.5, 3.0)});
     meshes.push_back({"sphere 8x8 scaled 2^30", mapped(uvsphere(8, 8, 1.0, 0, 0, 0), 30, 0, 0, 0)});
+    // extreme exponents: subnormal coordinates (2^-1060 .. 2^-1055), tiny but normal (2^-600), and huge (2^600, 2^1000): the float filter must not trust its error bound there
+    meshes.push_back({"block 3 subnormal 2^-1060", mapped(block(3), -1060, 0, 0, 0)});
+    meshes.push_back({"sphere 6x8 scaled 2^-600", mapped(uvsphere(6, 8, 1.0, 0.1, 0.2, 0.3), -600, 0, 0, 0)});
+    meshes.push_back({"block 3 scaled 2^600", mapped(block(3), 600, 0, 0, 0)});
+    meshes.push_back({"block 2 scaled 2^1000", mapped(block(2), 1000, 0, 0, 0)});
     long total = 0, bad = 0, on = 0, in = 0, out = 0;
     for (auto& nm : meshes) {
         const Mesh& m = nm.second;
@@ -34,18 +39,20 @@ int main() {
             qs.push_back({(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2});
             qs.push_back({(a[0]+b[0]+c[0])/3, (a[1]+b[1]+c[1])/3, (a[2]+b[2]+c[2])/3});
         }
-        long mb = 0;
+        long mb = 0, mbvh = 0;
+        meshcontains::Bvh bvh; bvh.build(m.v, m.t); std::vector<uint32_t> scratch;
         for (auto& q : qs) {
-            mesh::Pip o = mesh::classifyPoint(m, q.data());
+            mesh::Pip o = mesh::classifyPointHardened(m, q.data());
             const uint8_t want = o.boundary ? meshcontains::kOn : o.inside ? meshcontains::kIn : meshcontains::kOut;
             uint8_t got = meshcontains::classify(m.v, m.t, q.data());
 #ifdef MUT_BOUNDARY_IN
             if (got == meshcontains::kOn) got = meshcontains::kIn;
 #endif
+            { uint8_t gb = meshcontains::classifyBvh(m.v, m.t, bvh, q.data(), &scratch); if (gb != want) mbvh++; bad += gb != want; }
             total++; (want == 2 ? on : want == 1 ? in : out)++;
             if (got != want) { bad++; mb++; }
         }
-        std::printf("%-32s queries=%zu disagreements=%ld\n", nm.first.c_str(), qs.size(), mb);
+        std::printf("%-32s queries=%zu disagreements=%ld bvh-path disagreements=%ld\n", nm.first.c_str(), qs.size(), mb, mbvh);
     }
     std::printf("TOTAL queries=%ld (OUT %ld, IN %ld, ON %ld) disagreements=%ld\n", total, out, in, on, bad);
     return bad == 0 ? 0 : 1;

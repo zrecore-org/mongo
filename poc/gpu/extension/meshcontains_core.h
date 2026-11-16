@@ -8,6 +8,7 @@
 #include "meshvol_core.h"
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -16,6 +17,13 @@ using meshvol::BigInt;
 enum Verdict : uint8_t { kOut = 0, kIn = 1, kOn = 2 };
 
 inline int sgn(double x) { return (x > 0) - (x < 0); }
+// Shewchuk's error bounds assume no underflow or overflow in the products. A difference that is zero, or whose magnitude is within [lo, hi], keeps every
+// product of up to three of them inside the normal range; anything else (subnormal differences, huge values, NaN) goes straight to the exact integer path.
+#ifdef MESHCONTAINS_MUT_NO_WINDOW
+inline bool inWindow(double, double, double) { return true; }   // mutant: trust the float filter everywhere (wrong under underflow/overflow)
+#else
+inline bool inWindow(double x, double lo, double hi) { const double a = std::fabs(x); return a == 0 || (a >= lo && a <= hi); }
+#endif
 
 // Exact integers with a common exponent (finite inputs only).
 inline void toInts(const double* xs, int n, BigInt* out) {
@@ -32,10 +40,13 @@ inline void toInts(const double* xs, int n, BigInt* out) {
 
 // sign of the 2x2 determinant of (a-c, b-c) in the plane of 2-vectors: +1 counter-clockwise (Shewchuk's orient2d convention)
 inline int orient2dSign(const double* a, const double* b, const double* c) {
-    const double l = (a[0] - c[0]) * (b[1] - c[1]), r = (a[1] - c[1]) * (b[0] - c[0]), det = l - r;
-    const double bound = 3.3306690738754716e-16 * (std::fabs(l) + std::fabs(r));   // ccwerrboundA = (3 + 16 eps) eps, eps = 2^-53
-    if (det > bound) return 1;
-    if (det < -bound) return -1;
+    const double d0 = a[0] - c[0], d1 = b[1] - c[1], d2 = a[1] - c[1], d3 = b[0] - c[0];
+    if (inWindow(d0, 1e-150, 1e150) && inWindow(d1, 1e-150, 1e150) && inWindow(d2, 1e-150, 1e150) && inWindow(d3, 1e-150, 1e150)) {
+        const double l = d0 * d1, r = d2 * d3, det = l - r;
+        const double bound = 3.3306690738754716e-16 * (std::fabs(l) + std::fabs(r));   // ccwerrboundA = (3 + 16 eps) eps, eps = 2^-53
+        if (det > bound) return 1;
+        if (det < -bound) return -1;
+    }
     double in[6] = {a[0], a[1], b[0], b[1], c[0], c[1]};
     BigInt v[6]; toInts(in, 6, v);
     return BigInt((v[0] - v[4]) * (v[3] - v[5]) - (v[1] - v[5]) * (v[2] - v[4])).sign();
@@ -44,13 +55,16 @@ inline int orient2dSign(const double* a, const double* b, const double* c) {
 inline int orient3dSign(const double* a, const double* b, const double* c, const double* d) {
     const double adx = a[0] - d[0], bdx = b[0] - d[0], cdx = c[0] - d[0], ady = a[1] - d[1], bdy = b[1] - d[1], cdy = c[1] - d[1],
                  adz = a[2] - d[2], bdz = b[2] - d[2], cdz = c[2] - d[2];
-    const double bdxcdy = bdx * cdy, cdxbdy = cdx * bdy, cdxady = cdx * ady, adxcdy = adx * cdy, adxbdy = adx * bdy, bdxady = bdx * ady;
-    const double det = adz * (bdxcdy - cdxbdy) + bdz * (cdxady - adxcdy) + cdz * (adxbdy - bdxady);
-    const double permanent = (std::fabs(bdxcdy) + std::fabs(cdxbdy)) * std::fabs(adz) + (std::fabs(cdxady) + std::fabs(adxcdy)) * std::fabs(bdz) +
-                             (std::fabs(adxbdy) + std::fabs(bdxady)) * std::fabs(cdz);
-    const double bound = 7.771561172376103e-16 * permanent;                         // o3derrboundA = (7 + 56 eps) eps
-    if (det > bound) return 1;
-    if (det < -bound) return -1;
+    if (inWindow(adx, 1e-90, 1e90) && inWindow(bdx, 1e-90, 1e90) && inWindow(cdx, 1e-90, 1e90) && inWindow(ady, 1e-90, 1e90) && inWindow(bdy, 1e-90, 1e90) &&
+        inWindow(cdy, 1e-90, 1e90) && inWindow(adz, 1e-90, 1e90) && inWindow(bdz, 1e-90, 1e90) && inWindow(cdz, 1e-90, 1e90)) {
+        const double bdxcdy = bdx * cdy, cdxbdy = cdx * bdy, cdxady = cdx * ady, adxcdy = adx * cdy, adxbdy = adx * bdy, bdxady = bdx * ady;
+        const double det = adz * (bdxcdy - cdxbdy) + bdz * (cdxady - adxcdy) + cdz * (adxbdy - bdxady);
+        const double permanent = (std::fabs(bdxcdy) + std::fabs(cdxbdy)) * std::fabs(adz) + (std::fabs(cdxady) + std::fabs(adxcdy)) * std::fabs(bdz) +
+                                 (std::fabs(adxbdy) + std::fabs(bdxady)) * std::fabs(cdz);
+        const double bound = 7.771561172376103e-16 * permanent;                         // o3derrboundA = (7 + 56 eps) eps
+        if (det > bound) return 1;
+        if (det < -bound) return -1;
+    }
     double in[12] = {a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]};
     BigInt v[12]; toInts(in, 12, v);
     BigInt x0 = v[0] - v[9], y0 = v[1] - v[10], z0 = v[2] - v[11], x1 = v[3] - v[9], y1 = v[4] - v[10], z1 = v[5] - v[11], x2 = v[6] - v[9], y2 = v[7] - v[10], z2 = v[8] - v[11];
@@ -84,37 +98,106 @@ inline bool coplanarInClosedTriangle(const double* a, const double* b, const dou
     return nonDegenerate && BigInt(dot(c0, n)).sign() >= 0 && BigInt(dot(c1, n)).sign() >= 0 && BigInt(dot(c2, n)).sign() >= 0;
 }
 
-// Classifies one point against the whole mesh (all triangles). A triangle whose yz bounding box (compared exactly, doubles) does not contain p's
-// (y, z) can neither be crossed by the +x ray through p' nor contain p, so it is skipped without any predicate.
+// One triangle's contribution for query p: returns true when p is exactly on this closed triangle (verdict kOn), else adds 0 or 1 to *crossings.
+// A triangle whose yz bounding box (compared exactly, doubles) does not contain p's (y, z) can neither be crossed by the +x ray through p' nor contain p.
+inline bool triangleStep(const std::vector<double>& v, const std::vector<uint32_t>& t, size_t k, const double* p, int* crossings) {
+    const double* a = &v[3 * (size_t)t[3 * k]];
+    const double* b = &v[3 * (size_t)t[3 * k + 1]];
+    const double* c = &v[3 * (size_t)t[3 * k + 2]];
+    const double ymin = std::fmin(a[1], std::fmin(b[1], c[1])), ymax = std::fmax(a[1], std::fmax(b[1], c[1]));
+    const double zmin = std::fmin(a[2], std::fmin(b[2], c[2])), zmax = std::fmax(a[2], std::fmax(b[2], c[2]));
+    if (p[1] < ymin || p[1] > ymax || p[2] < zmin || p[2] > zmax) return false;
+    const int s0 = orientYZ(a, b, p), s1 = orientYZ(b, c, p), s2 = orientYZ(c, a, p);
+    const int o3 = orient3dSign(a, b, c, p);
+    if (o3 == 0 && coplanarInClosedTriangle(a, b, c, p)) return true;
+    if (s0 == 0 || s1 == 0 || s2 == 0) return false;
+    if (!(s0 == s1 && s1 == s2)) return false;
+    const double ayz[2] = {a[1], a[2]}, byz[2] = {b[1], b[2]}, cyz[2] = {c[1], c[2]};
+    const int nx = orient2dSign(ayz, byz, cyz);
+    if (nx == 0) return false;
+    int side = o3;
+    if (side == 0) {
+        double in[9] = {a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]};
+        BigInt w[9]; toInts(in, 9, w);
+        BigInt ux = w[3] - w[0], uy = w[4] - w[1], uz = w[5] - w[2], wx = w[6] - w[0], wy = w[7] - w[1], wz = w[8] - w[2];
+        BigInt ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+        side = -ny.sign();
+        if (side == 0) side = -nz.sign();
+    }
+    if (side == nx) (*crossings)++;
+    return false;
+}
+
+// All triangles (the reference path; O(nt) per point).
 inline Verdict classify(const std::vector<double>& v, const std::vector<uint32_t>& t, const double* p) {
     int crossings = 0;
     const size_t nt = t.size() / 3;
-    for (size_t k = 0; k < nt; k++) {
-        const double* a = &v[3 * (size_t)t[3 * k]];
-        const double* b = &v[3 * (size_t)t[3 * k + 1]];
-        const double* c = &v[3 * (size_t)t[3 * k + 2]];
-        const double ymin = std::fmin(a[1], std::fmin(b[1], c[1])), ymax = std::fmax(a[1], std::fmax(b[1], c[1]));
-        const double zmin = std::fmin(a[2], std::fmin(b[2], c[2])), zmax = std::fmax(a[2], std::fmax(b[2], c[2]));
-        if (p[1] < ymin || p[1] > ymax || p[2] < zmin || p[2] > zmax) continue;
-        const int s0 = orientYZ(a, b, p), s1 = orientYZ(b, c, p), s2 = orientYZ(c, a, p);
-        const int o3 = orient3dSign(a, b, c, p);
-        if (o3 == 0 && coplanarInClosedTriangle(a, b, c, p)) return kOn;
-        if (s0 == 0 || s1 == 0 || s2 == 0) continue;
-        if (!(s0 == s1 && s1 == s2)) continue;
-        const double ayz[2] = {a[1], a[2]}, byz[2] = {b[1], b[2]}, cyz[2] = {c[1], c[2]};
-        const int nx = orient2dSign(ayz, byz, cyz);
-        if (nx == 0) continue;
-        int side = o3;
-        if (side == 0) {
-            double in[9] = {a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]};
-            BigInt w[9]; toInts(in, 9, w);
-            BigInt ux = w[3] - w[0], uy = w[4] - w[1], uz = w[5] - w[2], wx = w[6] - w[0], wy = w[7] - w[1], wz = w[8] - w[2];
-            BigInt ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
-            side = -ny.sign();
-            if (side == 0) side = -nz.sign();
+    for (size_t k = 0; k < nt; k++) if (triangleStep(v, t, k, p, &crossings)) return kOn;
+    return (crossings & 1) ? kIn : kOut;
+}
+
+// Bounding-volume hierarchy over the triangles' binary64 boxes (exact min/max, closed boxes, comparisons of doubles are exact). Median split on the longest
+// centroid axis (nth_element), leaves of at most 8 triangles. The ray box of a query is [px, +inf) x {py} x {pz}. Only the tree SHAPE depends on floating
+// point; which triangles are candidates depends only on exact comparisons, so the verdicts do not depend on the tree.
+struct Bvh {
+    struct Node { double lo[3], hi[3]; uint32_t left = 0, right = 0, begin = 0, count = 0; };  // count > 0: leaf over idx[begin, begin+count)
+    std::vector<Node> nodes;
+    std::vector<uint32_t> idx;
+    std::vector<double> clo, chi;   // per-triangle boxes
+    void build(const std::vector<double>& v, const std::vector<uint32_t>& t) {
+        const size_t nt = t.size() / 3;
+        clo.assign(3 * nt, 0); chi.assign(3 * nt, 0); idx.resize(nt);
+        for (size_t k = 0; k < nt; k++) {
+            idx[k] = (uint32_t)k;
+            for (int d = 0; d < 3; d++) {
+                const double a = v[3 * (size_t)t[3 * k] + d], b = v[3 * (size_t)t[3 * k + 1] + d], c = v[3 * (size_t)t[3 * k + 2] + d];
+                clo[3 * k + d] = std::fmin(a, std::fmin(b, c)); chi[3 * k + d] = std::fmax(a, std::fmax(b, c));
+            }
         }
-        if (side == nx) crossings++;
+        nodes.clear(); nodes.reserve(2 * nt / 4 + 2);
+        if (nt) buildRange(0, (uint32_t)nt);
     }
+    uint32_t buildRange(uint32_t b, uint32_t e) {
+        const uint32_t me = (uint32_t)nodes.size();
+        nodes.emplace_back();
+        Node n; n.begin = b;
+        for (int d = 0; d < 3; d++) { n.lo[d] = INFINITY; n.hi[d] = -INFINITY; }
+        for (uint32_t i = b; i < e; i++) for (int d = 0; d < 3; d++) { n.lo[d] = std::fmin(n.lo[d], clo[3 * idx[i] + d]); n.hi[d] = std::fmax(n.hi[d], chi[3 * idx[i] + d]); }
+        if (e - b <= 8) { n.count = e - b; nodes[me] = n; return me; }
+        int axis = 0; double ext = n.hi[0] - n.lo[0];
+        for (int d = 1; d < 3; d++) if (n.hi[d] - n.lo[d] > ext) { ext = n.hi[d] - n.lo[d]; axis = d; }
+        const uint32_t mid = (b + e) / 2;
+        std::nth_element(idx.begin() + b, idx.begin() + mid, idx.begin() + e, [&](uint32_t x, uint32_t y) {
+            const double cx = clo[3 * x + axis] + chi[3 * x + axis], cy = clo[3 * y + axis] + chi[3 * y + axis];
+            return cx != cy ? cx < cy : x < y; });
+        n.left = buildRange(b, mid);
+        n.right = buildRange(mid, e);
+        nodes[me] = n;
+        return me;
+    }
+    // candidates for the +x ray from p: triangle ids whose closed box meets [px, inf) x {py} x {pz}
+    void query(const double* p, std::vector<uint32_t>* out) const {
+        out->clear();
+        if (nodes.empty()) return;
+        uint32_t stack[128]; int sp = 0; stack[sp++] = 0;
+        while (sp > 0) {
+            const Node& n = nodes[stack[--sp]];
+            if (n.hi[0] < p[0] || p[1] < n.lo[1] || p[1] > n.hi[1] || p[2] < n.lo[2] || p[2] > n.hi[2]) continue;
+            if (n.count) {
+                for (uint32_t i = n.begin; i < n.begin + n.count; i++) {
+                    const uint32_t k = idx[i];
+                    if (chi[3 * k] < p[0] || p[1] < clo[3 * k + 1] || p[1] > chi[3 * k + 1] || p[2] < clo[3 * k + 2] || p[2] > chi[3 * k + 2]) continue;
+                    out->push_back(k);
+                }
+            } else { stack[sp++] = n.right; stack[sp++] = n.left; }
+        }
+    }
+};
+// Same verdict as classify(), through the BVH.
+inline Verdict classifyBvh(const std::vector<double>& v, const std::vector<uint32_t>& t, const Bvh& bvh, const double* p, std::vector<uint32_t>* scratch) {
+    bvh.query(p, scratch);
+    int crossings = 0;
+    for (uint32_t k : *scratch) if (triangleStep(v, t, k, p, &crossings)) return kOn;
     return (crossings & 1) ? kIn : kOut;
 }
 }  // namespace meshcontains
