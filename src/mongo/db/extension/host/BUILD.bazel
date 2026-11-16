@@ -169,7 +169,9 @@ mongo_cc_library(
         "//src/mongo/db/pipeline:document_source_list_extensions.cpp",
     ],
     defines = select({
-        "//bazel/config:not_linux": [],
+        "@platforms//os:macos": [],
+        # Windows: extension loading without signature validation (the validator is POSIX-only).
+        "@platforms//os:windows": ["MONGO_HOST_EXTENSIONS_COMPATIBLE"],
         "//bazel/platforms:amazon_linux_2": [],
         "//conditions:default": ["MONGO_HOST_EXTENSIONS_COMPATIBLE"],
     }),
@@ -179,7 +181,8 @@ mongo_cc_library(
         "//src/mongo/db/query:query_knobs",
         "//src/third_party/yaml-cpp:yaml",
     ] + select({
-        "//bazel/config:not_linux": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:windows": [],
         "//bazel/platforms:amazon_linux_2": [],
         "//conditions:default": [
             ":signature_validator",

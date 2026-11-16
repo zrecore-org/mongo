@@ -494,7 +494,7 @@ Status storeBaseOptions(const moe::Environment& params) {
     }
 
     if (params.count("processManagement.loadExtensions")) {
-#ifdef __linux__
+#if defined(__linux__) || defined(_WIN32)
         // Save off configured extensions, but don't do any validation at this point - that will be
         // done later on during startup when we attempt to load them.
         for (const std::string& extension :
@@ -508,7 +508,7 @@ Status storeBaseOptions(const moe::Environment& params) {
 #else
         return Status(ErrorCodes::BadValue,
                       "Loading extensions via `--loadExtensions` or "
-                      "`processManagement.loadExtensions` is only supported on Linux");
+                      "`processManagement.loadExtensions` is only supported on Linux and Windows");
 #endif
     }
 

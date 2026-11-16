@@ -39,7 +39,44 @@
 #endif
 
 #ifdef MONGO_HOST_EXTENSIONS_COMPATIBLE
+#ifdef _WIN32
+// Windows has no signature validator (it is POSIX-only: fstat, /proc/self/fd, rnp). This stand-in
+// loads from the plain path and refuses any request that would need a signature check.
+namespace mongo::extension::host {
+class ValidatedExtension {
+public:
+    explicit ValidatedExtension(std::string path) : _path(std::move(path)) {}
+    const std::string& path() const {
+        return _path;
+    }
+    void leakDescriptor() {}
+
+private:
+    std::string _path;
+};
+
+class SignatureValidator {
+public:
+    ValidatedExtension validateExtensionSignature(const std::string& extensionName,
+                                                  const std::string& extensionPath) const {
+        uassert(13011810,
+                str::stream() << "Loading extension '" << extensionName
+                              << "' failed: extension signature validation is not supported on "
+                                 "Windows, so extensionsSignaturePublicKeyPath must not be set",
+                serverGlobalParams.extensionsSignaturePublicKeyPath.empty());
+#ifdef MONGO_CONFIG_EXT_SIG_SECURE
+        uasserted(13011811,
+                  str::stream() << "Loading extension '" << extensionName
+                                << "' failed: secure builds require signature validation, which "
+                                   "is not supported on Windows");
+#endif
+        return ValidatedExtension{extensionPath};
+    }
+};
+}  // namespace mongo::extension::host
+#else
 #include "mongo/db/extension/host/signature_validator.h"
+#endif
 #endif
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kExtension
