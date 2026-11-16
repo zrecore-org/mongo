@@ -18,6 +18,9 @@ if want mut1;     then clang++ $EXT -DMESHVOL_MUTANT=1 "$HERE/extension.cpp" -o 
 if want mut2;     then clang++ $EXT -DMESHVOL_MUTANT=2 "$HERE/extension.cpp" -o "$OUT/libmeshvol_mut2.dylib" & fi
 if want mut3;     then clang++ $EXT -DMESHVOL_MUTANT=3 "$HERE/extension.cpp" -o "$OUT/libmeshvol_mut3.dylib" & fi
 if want nocatch;  then clang++ $EXT -DNO_BOUNDARY_CATCH "$HERE/extension.cpp" -o "$OUT/libmeshvol_nocatch.dylib" & fi
+for m in 1 2 4 5 6 7; do if want cfgmut$m; then clang++ $EXT -DMESHVOL_VULKAN_PROBE -I$VKH -DMESHVOL_MUTANT_CFG=$m "$HERE/extension.cpp" -o "$OUT/libmeshvol_cfgmut$m.dylib" & fi; done   # MP14c mutants
+if want cfgmut3;  then clang++ $EXT -DMESHVOL_MUTANT_CFG=3 "$HERE/extension.cpp" -o "$OUT/libmeshvol_cfgmut3.dylib" & fi   # built WITHOUT the probe so that "gpuRequired ignored" is observable
+if want noprobe;  then clang++ $EXT "$HERE/extension.cpp" -o "$OUT/libmeshvol_noprobe.dylib" & fi   # MP14c: built without the Vulkan probe: gpu=true must report not ready
 if want novis;    then clang++ $COMMON -fPIC $BOOST -dynamiclib "$HERE/extension.cpp" -o "$OUT/libmeshvol_novis.dylib" & fi   # default visibility, no export list: symbol probe
 if want bad;      then
   for v in 1 2 3 4 5 6 7; do clang++ $COMMON -fPIC -dynamiclib -DBAD_VARIANT=$v -I"$HERE" "$HERE/bad_ext.cpp" -o "$OUT/libbad_v$v.dylib" & done

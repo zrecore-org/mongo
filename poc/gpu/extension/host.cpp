@@ -2,6 +2,10 @@
 // loading (mirrors host/load_extension.cpp), a portal, host services, a source stage, a query execution context (deadline, interrupt) and the
 // full stage lifecycle (parse, expand, promote, compile, set_source, open, get_next, close, destroy) with strict ownership accounting.
 // The exact oracle is oracle/exact.h (verbatim copy from zrecore-org/exactmesh, Apache-2.0). This file never includes the extension's own volume code.
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+#include <cstring>
 #include "mongo/db/extension/public/api.h"
 
 #include "bson_min.h"
@@ -105,6 +109,20 @@ const MongoExtensionHostServicesVTable g_hsVt = {
 };
 MongoExtensionHostServices g_hostServices{&g_hsVt};
 
+// MP14c: number of loaded images whose path looks like a Vulkan loader or driver (independent of the extension's own counter).
+int vulkanImages() {
+    int n = 0;
+#ifdef __APPLE__
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) { const char* nm = _dyld_get_image_name(i); if (nm && (strstr(nm, "libvulkan") || strstr(nm, "MoltenVK"))) n++; }
+#else
+    FILE* f = fopen("/proc/self/maps", "r");
+    char line[4096];
+    while (f && fgets(line, sizeof line, f)) if (strstr(line, "libvulkan") || strstr(line, "libMoltenVK")) n++;
+    if (f) fclose(f);
+#endif
+    return n;
+}
+string g_extOptions;  // MP14c: the extensionOptions text the portal hands to initialize()
 struct HPortal : MongoExtensionHostPortal {
     vector<const MongoExtensionAggStageDescriptor*> registered;
     static const MongoExtensionHostPortalVTable vt;
@@ -115,7 +133,7 @@ const MongoExtensionHostPortalVTable HPortal::vt = {
         const_cast<HPortal*>(static_cast<const HPortal*>(p))->registered.push_back(d);
         return hostOk();
     },
-    [](const MongoExtensionHostPortal*) -> MongoExtensionByteView { return {nullptr, 0}; },
+    [](const MongoExtensionHostPortal*) -> MongoExtensionByteView { return {reinterpret_cast<const uint8_t*>(g_extOptions.data()), g_extOptions.size()}; },
     [](const MongoExtensionHostPortal*, MongoExtensionByteView, const MongoExtensionPipelineRewriteRule*, size_t) -> MongoExtensionStatus* { return hostOk(); },
 };
 
@@ -786,6 +804,28 @@ int main(int argc, char** argv) {
         CorpusStats cs = runCorpus(L);
         std::printf("CORPUS total=%ld wrong=%ld exactMismatch=%ld roundingWrong=%ld errors=%ld\n", cs.total, cs.wrong, cs.wrongExact, cs.wrongRound, cs.errors);
         std::printf("MUTANT-SUMMARY lib=%s wrong=%ld\n", dir.c_str(), cs.wrong);
+        return 0;
+    } else if (mode == "options") {  // MP14c: options <lib> <yaml text>: load with that extensionOptions text, report init result, config probe, corpus
+        g_extOptions = argc > 3 ? argv[3] : "";
+        ExtLib L = loadExtension(dir);
+        std::printf("OPTIONS-LOAD ok=%d error=\"%s\"\n", L.ok ? 1 : 0, L.error.c_str());
+        std::printf("VULKAN-IMAGES %d\n", vulkanImages());
+        if (!L.ok) return 0;
+        auto r = run(L, spec([&](bm::Builder& b) { b.str("probe", "config"); }), {docOf(0, "")});
+        if (!r.ok || r.docs.empty()) { std::printf("probe failed: %s\n", r.err.reason.c_str()); return 2; }
+        bm::Elem e; auto* p = reinterpret_cast<const uint8_t*>(r.docs[0].data());
+        bm::findField(p, r.docs[0].size(), "meshVolume", &e);
+        const uint8_t* q = e.val + 4; const uint8_t* end = e.val + e.vlen - 1;
+        std::printf("PROBE config:");
+        while (q < end) {
+            bm::Elem f; if (!bm::readElem(q, end, &f)) break; q = f.end;
+            if (f.type == bm::kInt64) { int64_t v; std::memcpy(&v, f.val, 8); std::printf(" %.*s=%lld", (int)f.name.size(), f.name.data(), (long long)v); }
+            else if (f.type == bm::kBool) std::printf(" %.*s=%s", (int)f.name.size(), f.name.data(), f.val[0] ? "true" : "false");
+            else if (f.type == bm::kString) std::printf(" %.*s=\"%s\"", (int)f.name.size(), f.name.data(), f.val + 4);
+        }
+        std::printf("\n");
+        CorpusStats cs = runCorpus(L);
+        std::printf("CORPUS total=%ld wrong=%ld exactMismatch=%ld roundingWrong=%ld errors=%ld\n", cs.total, cs.wrong, cs.wrongExact, cs.wrongRound, cs.errors);
         return 0;
     } else if (mode == "symbol" || mode == "vulkan") {
         ExtLib L = loadExtension(dir);

@@ -12,6 +12,10 @@
 #include "meshvol_core.h"
 
 #include <atomic>
+#include <condition_variable>
+#include <cstring>
+#include <mutex>
+#include <thread>
 #include <chrono>
 #include <cstdlib>
 #include <deque>
@@ -35,6 +39,7 @@ __attribute__((noinline)) int collide_me() { return 1; }
 
 namespace {
 using std::string;
+string configDoc();  // MP14c, defined below
 
 // ------------------------------------------------------------------ counters (reported through the "counters" probe)
 std::atomic<long> g_computeCalls{0}, g_sourcePulls{0}, g_throwsCaught{0}, g_maxBatch{0}, g_liveBufs{0}, g_liveStatuses{0}, g_liveObjs{0}, g_docsOut{0}, g_getNextCalls{0};
@@ -225,7 +230,7 @@ bool computeBatch(const Spec& spec, const DocIn* in, size_t n, DocOut* out, Canc
         while (nowMs() < until) {}
     }
     if (!spec.probe.empty()) {
-        string d = spec.probe == "vulkan" ? vulkanProbe() : spec.probe == "symbol" ? (bm::Builder().i32("collideMe", collide_me()).finish()) : countersDoc();
+        string d = spec.probe == "config" ? configDoc() : spec.probe == "vulkan" ? vulkanProbe() : spec.probe == "symbol" ? (bm::Builder().i32("collideMe", collide_me()).finish()) : countersDoc();
         for (size_t i = 0; i < n; i++) out[i].probeDoc = d;
         return true;
     }
@@ -272,6 +277,173 @@ string outputDoc(const Spec& spec, const DocIn& in, const DocOut& o) {
     return out.finish();
 }
 
+// ------------------------------------------------------------------ MP14c: configuration (extensionOptions)
+// The host serialises the YAML map `extensionOptions` of the extension's .conf with YAML::Dump and hands the text to initialize() through the portal.
+// Only a flat `key: value` map is accepted; anything else fails initialize (a wrong config must not start silently).
+struct Config {
+#if defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 2
+    bool gpu = true, gpuRequired = false;  // mutant: default flipped to on
+#else
+    bool gpu = false, gpuRequired = false;  // gpu is OFF by default (owner requirement)
+#endif
+    bool gpuProbed = false, gpuReady = false;
+    string gpuReason = "not requested";
+};
+Config g_cfg;
+std::atomic<long> g_vulkanProbes{0};
+string vulkanProbe();
+
+string trimWs(const string& x) {
+    size_t a = x.find_first_not_of(" \t\r"), b = x.find_last_not_of(" \t\r");
+    return a == string::npos ? string() : x.substr(a, b - a + 1);
+}
+bool parseBoolStrict(const string& key, const string& v) {
+    if (v == "true") return true;
+    if (v == "false") return false;
+    throw ExtErr{31, "meshvolume: option '" + key + "' must be true or false, got '" + v + "'"};
+}
+Config parseOptions(const string& textIn) {
+    // Real YAML::Dump output (fork yaml-cpp, see docs/logs/mp14c_yaml_dump_probe.out): block map with no indentation and no trailing newline
+    // ("gpu: true\ngpuRequired: true"), "{}" for an empty map, "~" for a null map, a single-line flow map "{gpu: true, gpuRequired: false}" when the
+    // conf used flow style, duplicate keys kept, quotes dropped ("true" and true are indistinguishable), "yes"/"True"/"1" kept verbatim.
+    Config c;
+    string text = trimWs(textIn);
+    std::vector<string> entries;
+    if (text.empty() || text == "{}" || text == "~") {
+    } else if (text[0] == '{') {
+        if (text.back() != '}' || text.find_first_of("[]{", 1) != string::npos || text.find('\n') != string::npos)
+            throw ExtErr{32, "meshvolume: only a flat map of options is supported: '" + text + "'"};
+        string inner = text.substr(1, text.size() - 2);
+        size_t p0 = 0;
+        while (p0 <= inner.size()) {
+            size_t cm = inner.find(',', p0);
+            entries.push_back(trimWs(inner.substr(p0, cm == string::npos ? string::npos : cm - p0)));
+            p0 = cm == string::npos ? inner.size() + 1 : cm + 1;
+        }
+    } else {
+        size_t pos = 0;
+        while (pos <= text.size()) {
+            size_t nl = text.find('\n', pos);
+            string raw = text.substr(pos, nl == string::npos ? string::npos : nl - pos);
+            pos = nl == string::npos ? text.size() + 1 : nl + 1;
+            if (!raw.empty() && (raw[0] == ' ' || raw[0] == '\t')) throw ExtErr{32, "meshvolume: nested or indented option lines are not supported: '" + trimWs(raw) + "'"};
+            string line = trimWs(raw);
+            if (line.empty() || line[0] == '#' || line == "---") continue;
+            entries.push_back(line);
+        }
+    }
+    std::vector<string> seen;
+    for (const string& line : entries) {
+        size_t colon = line.find(':');
+        if (colon == string::npos) throw ExtErr{33, "meshvolume: option is not 'key: value': '" + line + "'"};
+        string key = trimWs(line.substr(0, colon)), val = trimWs(line.substr(colon + 1));
+#if !(defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 5)
+        for (const string& k : seen) if (k == key) throw ExtErr{37, "meshvolume: duplicate option '" + key + "'"};
+#endif
+        seen.push_back(key);
+        if (key == "gpu") c.gpu = parseBoolStrict(key, val);
+        else if (key == "gpuRequired") c.gpuRequired = parseBoolStrict(key, val);
+#if defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 4
+        else continue;  // mutant: strictness removed
+#else
+        else throw ExtErr{34, "meshvolume: unknown extension option '" + key + "' (known: gpu, gpuRequired)"};
+#endif
+    }
+    if (c.gpuRequired && !c.gpu) throw ExtErr{35, "meshvolume: gpuRequired is true but gpu is not true"};
+    return c;
+}
+// Reads an int64 field out of a probe document (0 when absent).
+int64_t probeInt(const string& doc, const char* name) {
+    bm::Elem e;
+    if (!bm::findField(reinterpret_cast<const uint8_t*>(doc.data()), doc.size(), name, &e) || e.type != bm::kInt64) return 0;
+    int64_t v; std::memcpy(&v, e.val, 8); return v;
+}
+bool probeBool(const string& doc, const char* name) {
+    bm::Elem e;
+    return bm::findField(reinterpret_cast<const uint8_t*>(doc.data()), doc.size(), name, &e) && e.type == bm::kBool && e.val[0];
+}
+string probeStr(const string& doc, const char* name) {
+    bm::Elem e;
+    if (!bm::findField(reinterpret_cast<const uint8_t*>(doc.data()), doc.size(), name, &e) || e.type != bm::kString) return string();
+    return string(reinterpret_cast<const char*>(e.val + 4), e.vlen - 5);
+}
+// Runs the Vulkan probe in a helper thread and waits at most `limitMs`; a probe that hangs in a driver is abandoned (detached), never joined.
+// A probe that CRASHES inside a driver takes the host process down (MP14a bar 5): not survivable in-process.
+bool probeWithDeadline(string* docOut, int64_t limitMs) {
+    struct Shared { std::mutex m; std::condition_variable cv; bool done = false; string doc; };
+    auto sh = std::make_shared<Shared>();
+    std::thread([sh] {
+        const char* hang = std::getenv("MESHVOL_PLANT_PROBE_HANG_MS");  // test-only plant
+        if (hang) std::this_thread::sleep_for(std::chrono::milliseconds(std::atol(hang)));
+        string d = vulkanProbe();
+        std::lock_guard<std::mutex> g(sh->m);
+        sh->doc = std::move(d);
+        sh->done = true;
+        sh->cv.notify_all();
+    }).detach();
+    std::unique_lock<std::mutex> lk(sh->m);
+    if (!sh->cv.wait_for(lk, std::chrono::milliseconds(limitMs), [&] { return sh->done; })) return false;
+    *docOut = sh->doc;
+    return true;
+}
+void logGateLine(const Config& c) {
+    if (!g_hostServices || !g_hostServices->vtable->get_logger) return;
+    MongoExtensionLogger* lg = g_hostServices->vtable->get_logger();
+    if (!lg) return;
+    const string msg = string("meshvolume: gpu requested=") + (c.gpu ? "true" : "false") + " ready=" + (c.gpuReady ? "true" : "false") + " engine=cpu reason=" + c.gpuReason;
+    MongoExtensionLogMessage m{};
+    m.code = 7001400;
+    m.message = {reinterpret_cast<const uint8_t*>(msg.data()), msg.size()};
+    m.type = kLog;
+    m.attributes = {0, nullptr};
+    m.severityOrLevel.severity = kInfo;
+    MongoExtensionStatus* st = lg->vtable->log(&m);
+    consume(st);
+}
+#if defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 7
+// mutant: opens the loader from a static initialiser, before the config is parsed (the probe counter stays 0)
+struct EarlyOpen { EarlyOpen() { dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL); dlopen("/opt/homebrew/lib/libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL); dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL); } } g_earlyOpen;
+#endif
+// Applies the gate: only when gpu is true does the extension touch Vulkan (one probe, at initialize, cached for the process).
+void applyGpuGate(Config& c) {
+    if (!c.gpu) { c.gpuReason = "not requested"; logGateLine(c); return; }
+    c.gpuProbed = true;
+    ++g_vulkanProbes;
+    string doc;
+    const long limit = std::getenv("MESHVOL_PROBE_LIMIT_MS") ? std::atol(std::getenv("MESHVOL_PROBE_LIMIT_MS")) : 10000;
+    if (!probeWithDeadline(&doc, limit)) {
+        c.gpuReady = false;
+        c.gpuReason = "vulkan probe timed out";
+    } else if (!probeBool(doc, "ok")) {
+        c.gpuReady = false;
+        c.gpuReason = probeBool(doc, "loaderLoaded") ? "vulkan instance creation failed" : "vulkan loader not found";
+#ifdef MESHVOL_VULKAN_PROBE
+#else
+        c.gpuReason = "built without vulkan support";
+#endif
+    } else if (probeInt(doc, "deviceCount") == 0) {
+        c.gpuReady = false;
+        c.gpuReason = "no physical devices";
+    } else if (probeInt(doc, "hardwareDeviceCount") == 0) {
+        c.gpuReady = false;
+        c.gpuReason = "software device only";
+    } else {
+        c.gpuReady = true;
+        c.gpuReason = "hardware device present";
+    }
+#if defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 6
+    if (!c.gpuReady && c.gpuReason != "software device only") c.gpuReady = true;  // mutant: probe error swallowed
+#endif
+    logGateLine(c);
+    if (!c.gpuReady && c.gpuRequired) throw ExtErr{36, "meshvolume: gpuRequired is true but the GPU is not ready: " + c.gpuReason};
+}
+string configDoc() {
+    bm::Builder b;
+    b.boolean("gpuRequested", g_cfg.gpu).boolean("gpuRequired", g_cfg.gpuRequired).boolean("gpuProbed", g_cfg.gpuProbed)
+        .boolean("gpuReady", g_cfg.gpuReady).str("engine", "cpu").str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes);
+    return b.finish();
+}
+
 // ------------------------------------------------------------------ probes
 string countersDoc() {
     bm::Builder b;
@@ -312,7 +484,25 @@ string vulkanProbe() {
     VkInstance inst = nullptr;
     const VkResult r = createInstance(&ci, nullptr, &inst);
     b.i32("vkResult", (int32_t)r).boolean("portabilityEnumeration", portability);
-    if (r == VK_SUCCESS) destroyInstance(inst, nullptr);
+    int64_t devCount = 0, hwCount = 0;
+    if (r == VK_SUCCESS) {
+        auto enumDev = (PFN_vkEnumeratePhysicalDevices)dlsym(h, "vkEnumeratePhysicalDevices");
+        auto getProps = (PFN_vkGetPhysicalDeviceProperties)dlsym(h, "vkGetPhysicalDeviceProperties");
+        uint32_t nd = 0;
+        if (enumDev && getProps && enumDev(inst, &nd, nullptr) == VK_SUCCESS && nd > 0) {
+            std::vector<VkPhysicalDevice> devs(nd);
+            if (enumDev(inst, &nd, devs.data()) == VK_SUCCESS) {
+                devCount = nd;
+                for (uint32_t i = 0; i < nd; i++) {
+                    VkPhysicalDeviceProperties pr{};
+                    getProps(devs[i], &pr);
+                    if (pr.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU) hwCount++;  // lavapipe / llvmpipe report TYPE_CPU
+                }
+            }
+        }
+        destroyInstance(inst, nullptr);
+    }
+    b.i64("deviceCount", devCount).i64("hardwareDeviceCount", hwCount);
     b.boolean("ok", r == VK_SUCCESS).i64("elapsedMs", nowMs() - t0);
     // the loader is intentionally left loaded (dlclose of loaders/ICDs inside a host process is its own hazard)
 #else
@@ -610,6 +800,15 @@ const MongoExtensionVTable g_extVt = {
     /*initialize*/
     [](const MongoExtension*, const MongoExtensionHostPortal* portal) -> MongoExtensionStatus* {
         return guard([&] {
+            const MongoExtensionByteView ov = portal->vtable->get_extension_options(portal);
+            Config c = parseOptions(ov.data && ov.len ? string(reinterpret_cast<const char*>(ov.data), ov.len) : string());
+#if defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 1
+            c.gpu = false;  // mutant: option ignored
+#elif defined(MESHVOL_MUTANT_CFG) && MESHVOL_MUTANT_CFG == 3
+            c.gpuRequired = false;  // mutant: gpuRequired ignored
+#endif
+            applyGpuGate(c);
+            g_cfg = c;
             MongoExtensionStatus* s = portal->vtable->register_stage_descriptor(portal, &g_descriptor);
             consume(s);
         });
