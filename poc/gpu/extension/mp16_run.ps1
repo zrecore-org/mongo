@@ -3,11 +3,11 @@
 #   core: CPU only (exactness suites and their mutants).  host: CPU only (stage plumbing through the DLL).  real: CPU only (60 real models, needs -Models).
 #   gpu:  uses the GPU, ONLY inside a GPU turn held by the mongo agent (one program at a time), refuses without -GpuTurn.
 # Nothing is installed and no setting is changed; files are written only under -Out. Exit code 0 only if every check passes.
-param([Parameter(Mandatory)][ValidateSet('core','host','real','gpu')][string]$Item, [Parameter(Mandatory)][string]$Pkg, [Parameter(Mandatory)][string]$Out,
+param([Parameter(Mandatory)][ValidateSet('core','host','real','gpu','bench')][string]$Item, [Parameter(Mandatory)][string]$Pkg, [Parameter(Mandatory)][string]$Out,
       [string]$Models = '', [switch]$GpuTurn)
 $ErrorActionPreference = 'Continue'
 [Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
-if ($Item -eq 'gpu' -and -not $GpuTurn) { throw 'gpu uses the GPU: run it only inside a GPU turn and pass -GpuTurn' }
+if (($Item -eq 'gpu' -or $Item -eq 'bench') -and -not $GpuTurn) { throw "$Item uses the GPU: run it only inside a GPU turn and pass -GpuTurn" }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Exe = Join-Path $Pkg 'exe'; $Dll = Join-Path $Exe 'libmeshvol_ext.dll'
 $script:Fails = 0
@@ -89,6 +89,25 @@ if ($Item -eq 'gpu') {
     }
     $r = Run-Prog 'real_gpu' (Join-Path $Exe 'real_gpu.exe') @(($list -replace '\\','/')) 1800 $null
     Chk 'device path on the 60 real models through the NVIDIA driver: 0 false definite, 0 disagreements, hash ae59d9976297a67b, UNCERTAIN 134979' ($r.Rc -eq 0 -and (Has $r.Text 'uncertain=134979 falseDefinite=0 ON=68436 disagreements=0 resolved-verdict hash=ae59d9976297a67b')) ((($r.Text -split "`n") | Select-String '^TOTAL' | Select-Object -First 1).ToString().Trim())
+    & nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv | Tee-Object -FilePath (Join-Path $Out 'nvidia-smi_after.txt')
+}
+if ($Item -eq 'bench') {
+    # LABELLED speed table: CPU path with 1, 2, 4, 6, 12 threads versus the device path, warm second run of one document (9,600-triangle sphere), N random points. Not a G4 claim by itself.
+    & nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv | Tee-Object -FilePath (Join-Path $Out 'nvidia-smi_before.txt')
+    $fh = Join-Path $Exe 'fakehost.exe'; $d = ($Dll -replace '\\','/')
+    $rows = @("points | cpu 1 | cpu 2 | cpu 4 | cpu 6 | cpu 12 | device   (ms, warm second run)")
+    foreach ($n in 50000, 200000, 600000) {
+        $row = "$n"
+        foreach ($t in 1, 2, 4, 6, 12) {
+            $r = Run-Prog "bench_cpu_${n}_t$t" $fh @('containsgpu', $d, 'cpu', "$n") 900 @{ MP14D_CPU_THREADS = "$t" }
+            $row += ' | ' + [regex]::Match($r.Text, 'SECOND RUN elapsedMs=([0-9.]+)').Groups[1].Value
+            Chk "cpu path ($t threads, $n points): verdicts equal the single-thread core" (Has $r.Text 'equal CPU core: YES') ''
+        }
+        $r = Run-Prog "bench_dev_$n" $fh @('containsgpu', $d, 'ok', "$n") 900 $null
+        $row += ' | ' + [regex]::Match($r.Text, 'SECOND RUN elapsedMs=([0-9.]+)').Groups[1].Value
+        $rows += $row
+    }
+    $rows | Tee-Object -FilePath (Join-Path $Out 'bench_table.txt')
     & nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv | Tee-Object -FilePath (Join-Path $Out 'nvidia-smi_after.txt')
 }
 "FAILS $($script:Fails)"

@@ -113,3 +113,12 @@ Question: can `meshvol_ext` (both stages, both engines) run on Windows, first na
 3. **Windows `mongod` build:** run by aalbino-1b with their user's approval, as the Linux build was (multi-hour, niced, output root on D:). Gated on step 0's toolchain answer; if VS 2022 is missing, stop and report exactly what is missing. Not started until step 1 is verified.
 4. **Real Windows `mongod` run:** `test_mp14d.py` unchanged (hash `ae59d9976297a67b` on the 60 models), the planted-failure and concurrency checks, SIGTERM equivalent (Ctrl-Break/`taskkill` without /f), the fatal-error scan, device path through the NVIDIA driver. `.conf` ownership: documented gap from step 2.
 Out of scope: Windows release signing, a Windows Service wrapper, WSL as a substitute (WSL cannot reach NVIDIA Vulkan, only Dozen).
+
+### MP16 step 2 scoping (2026-11-16, read-only; no fork source edited, nothing built)
+
+Windows loader work in the fork, from reading the code:
+- `src/mongo/db/extension/host/BUILD.bazel` (`extension_loader`): `MONGO_HOST_EXTENSIONS_COMPATIBLE` and the `:signature_validator` dep are excluded by `//bazel/config:not_linux`. A Windows branch is needed for both.
+- `load_extension.cpp`: `verifyConfigPathPermissions` is `#ifdef __linux__` (uid/mode checks); on Windows it compiles to nothing, so the ownership check is a stated gap (an ACL check is the real equivalent). `<fcntl.h>` is included unconditionally.
+- `signature_validator.cpp`: POSIX-only (`unistd.h`, `fstat`, `geteuid`, `S_ISREG`, `/proc/self/fd`). With signature validation skipped (insecure build, no public key path) it returns the plain path, so a Windows insecure build can skip it; secure mode is out of scope.
+- `.so` suffix and `SharedLibrary::create` path handling need a check on Windows (`.dll`).
+- None of this can be compiled on the M1; it needs the Windows Bazel build (step 3), so edits wait for a build that can check them.
