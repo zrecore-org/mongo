@@ -39,4 +39,12 @@ The FAQ names a commercial licence as the alternative ("Customers and OEM partne
 1. **Scenario: decided.** The owner said we will make our own release builds, so scenario 2 (conveying binaries) applies, with section 13 added if any hosted service is offered later.
 2. **Extension default-on: product decision, recommend the conservative reading.** Treat `meshvol_ext` as part of the Corresponding Source whenever it ships alongside the binary, whether or not it is enabled by default. It costs nothing extra if source is published anyway. GPU acceleration stays off by default (owner decision) and is a separate matter.
 3. **Decided 2026-11-16: publish exactmesh.** The owner chose publication over a commercial licence. `zrecore-org/exactmesh` is public (checked with `gh repo view`: visibility PUBLIC, Apache-2.0, 76 commits, no secrets or blobs over 2 MB found in history). That satisfies section 6(d) for exactmesh's source; the patched Geogram sources and the fork's own source must still be offered from the same place as any binary we convey. A commercial licence from MongoDB stays an option for a different arrangement.
-4. **Counsel review before the first external conveyance** (one line; not a blocker for internal use).
+4. **No counsel (owner, 2026-11-16: "it's just me here").** This note is research, not legal advice, and the decisions above are the owner's own call. Nothing is required while use is internal. Before the first external conveyance or any hosted service, work through the checklist below.
+
+## Checklist before a binary leaves the building or a service is offered
+1. Publish the Corresponding Source next to the binary and say where it is (section 6(d)): the fork tree at the exact commit, `meshvol_ext`, exactmesh (public, Apache-2.0), the patched Geogram sources (BSD-3-Clause), and the build scripts.
+2. Ship the SSPL text (`LICENSE-Community.txt`) and keep every existing notice; add notices that we modified the work with a date (section 5(a), 5(b)).
+3. Keep the third-party licence texts and notices (Apache-2.0 NOTICE, BSD-3-Clause, BSL-1.0) with the sources.
+4. Do not put AGPLv3 or GPLv2-only code into the whole (see above).
+5. Offering the functionality to third parties as a service triggers section 13 (Service Source Code of everything used to run the service). Decide that before building a service, not after.
+6. Release builds need our own signing key for the extension (stock keys refuse it); unverified, see `extension/RESULTS.md`.
