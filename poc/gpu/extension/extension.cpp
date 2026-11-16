@@ -375,7 +375,8 @@ bool probeWithDeadline(string* docOut, int64_t limitMs) {
     std::thread([sh] {
         const char* hang = std::getenv("MESHVOL_PLANT_PROBE_HANG_MS");  // test-only plant
         if (hang) std::this_thread::sleep_for(std::chrono::milliseconds(std::atol(hang)));
-        string d = vulkanProbe();
+        string d;
+        try { d = vulkanProbe(); } catch (...) { d.clear(); }  // an exception must never escape a detached thread (std::terminate would kill the host)
         std::lock_guard<std::mutex> g(sh->m);
         sh->doc = std::move(d);
         sh->done = true;
@@ -414,6 +415,9 @@ void applyGpuGate(Config& c) {
     if (!probeWithDeadline(&doc, limit)) {
         c.gpuReady = false;
         c.gpuReason = "vulkan probe timed out";
+    } else if (doc.empty()) {
+        c.gpuReady = false;
+        c.gpuReason = "vulkan probe failed";
     } else if (!probeBool(doc, "ok")) {
         c.gpuReady = false;
         c.gpuReason = probeBool(doc, "loaderLoaded") ? "vulkan instance creation failed" : "vulkan loader not found";
@@ -461,7 +465,7 @@ string vulkanProbe() {
     const char* used = "";
     for (const char* c : cands) if ((h = dlopen(c, RTLD_NOW | RTLD_LOCAL))) { used = c; break; }
     b.boolean("loaderLoaded", h != nullptr).str("loader", used);
-    if (!h) { b.boolean("ok", false).str("detail", dlerror() ? dlerror() : "dlopen failed"); return b.finish(); }
+    if (!h) { const char* de = dlerror(); b.boolean("ok", false).str("detail", de ? de : "dlopen failed"); return b.finish(); }   // dlerror() clears itself: read it once
     auto createInstance = (PFN_vkCreateInstance)dlsym(h, "vkCreateInstance");
     auto destroyInstance = (PFN_vkDestroyInstance)dlsym(h, "vkDestroyInstance");
     auto enumExt = (PFN_vkEnumerateInstanceExtensionProperties)dlsym(h, "vkEnumerateInstanceExtensionProperties");
