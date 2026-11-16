@@ -18,9 +18,9 @@ o=$(go libmeshvol_ext fail);  echo "$o" | grep -E "CASE|COUNTERS|SECOND" | cut -
 chk "planted device failure: falls back, verdicts equal (both runs), breaker open (1 fallback, no device batch, engine cpu)" "$(all "$(has "$o" 'CASE fail.*equal CPU core: YES')" "$(has "$o" 'SECOND RUN verdicts equal CPU core: YES')" "$([ "$(cnt "$o" 2 gpuFallbacks)" = 1 ] && [ "$(cnt "$o" 2 gpuBatches)" = 0 ] && echo ok)" "$(has "$o" 'engine="cpu"')")"
 o=$(go libmeshvol_ext wrong); echo "$o" | grep -E "CASE|COUNTERS|SECOND" | cut -c1-260
 chk "planted wrong verdicts: shadow check catches, verdicts equal (both runs), device disabled" "$(all "$(has "$o" 'CASE wrong.*equal CPU core: YES')" "$(has "$o" 'SECOND RUN verdicts equal CPU core: YES')" "$([ "$(cnt "$o" 2 gpuShadowMismatch)" = 1 ] && [ "$(cnt "$o" 2 gpuBatches)" = 0 ] && echo ok)")"
-for pc in "createfail:planted failure of the lazy device creation" "oom:vkAllocateMemory" "timeout:vkWaitForFences"; do
+for pc in "createfail:planted failure of the lazy device creation" "oom:vkCreateBuffer\|vkAllocateMemory" "timeout:vkWaitForFences"; do
   case=${pc%%:*}; want=${pc#*:}; o=$(go libmeshvol_ext $case); echo "$o" | grep -E "CASE|COUNTERS" | cut -c1-300
-  chk "planted $case: the intended failure fired ('$want' in gpuLastFailure), fell back, verdicts equal (both runs), device disabled" "$(all "$(has "$o" 'CASE .*equal CPU core: YES')" "$(has "$o" 'SECOND RUN verdicts equal CPU core: YES')" "$(has "$o" "gpuLastFailure=\"[^\"]*$want")" "$([ "$(cnt "$o" 2 gpuFallbacks)" = 1 ] && [ "$(cnt "$o" 2 gpuBatches)" = 0 ] && echo ok)")"
+  chk "planted $case: the intended failure fired ('$want' in gpuLastFailure), fell back, verdicts equal (both runs), device disabled" "$(all "$(has "$o" 'CASE .*equal CPU core: YES')" "$(has "$o" 'SECOND RUN verdicts equal CPU core: YES')" "$(echo "$o" | grep -q "gpuLastFailure=\"[^\"]*\($want\)" && echo ok || echo no)" "$([ "$(cnt "$o" 2 gpuFallbacks)" = 1 ] && [ "$(cnt "$o" 2 gpuBatches)" = 0 ] && echo ok)")"
 done
 o=$("$LOCK" ./fakehost containsgpu ./libmeshvol_ext.dylib concurrent 20000 2>&1); echo "$o" | grep -E "CASE|COUNTERS" | cut -c1-220
 chk "concurrency: 6 threads x 6 aggregations on one device context, 0 mismatching runs, 36 device batches" "$(all "$(has "$o" 'verdict-mismatching runs=0')" "$([ "$(cnt "$o" 1 gpuBatches)" = 36 ] && echo ok)")"

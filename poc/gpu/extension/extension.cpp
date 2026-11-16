@@ -154,6 +154,7 @@ struct Spec {
     string input = "mesh", output = "meshVolume", points = "points", plant, probe;
     uint32_t batchSize = 1024;
     uint32_t gpuMinPoints = 250000;   // $meshContains: the device path is considered only for at least this many points in one document
+    uint32_t cpuThreads = 1;          // $meshContains: threads for the CPU path inside one document (1 = the stage uses one thread; more only for measurement or dedicated servers)
     bool meshCache = true;            // $meshContains: reuse the parsed mesh, its BVH and device tree across documents with byte-identical meshes
     string engine = "auto";          // $meshContains: "auto" (device when enabled, ready and large enough) or "cpu" (never the device)
     int spinMs = 0;
@@ -193,6 +194,7 @@ struct Spec {
             if (e.name == "input") s.input = strVal();
             else if (e.name == "output") s.output = strVal();
             else if (s.contains && e.name == "points") s.points = strVal();
+            else if (s.contains && e.name == "cpuThreads") { long v = numVal(); if (v < 1 || v > 64) throw ExtErr{22, "$meshContains: cpuThreads must be in [1, 64]"}; s.cpuThreads = (uint32_t)v; }
             else if (s.contains && e.name == "meshCache") { if (e.type != bm::kBool) throw ExtErr{21, "$meshContains: meshCache must be a boolean"}; s.meshCache = e.val[0] != 0; }
             else if (s.contains && e.name == "engine") { s.engine = strVal(); if (s.engine != "auto" && s.engine != "cpu") throw ExtErr{19, "$meshContains: engine must be \"auto\" or \"cpu\""}; }
             else if (s.contains && e.name == "gpuMinPoints") { long v = numVal(); if (v < 1 || v > (1L << 30)) throw ExtErr{20, "$meshContains: gpuMinPoints must be in [1, 2^30]"}; s.gpuMinPoints = (uint32_t)v; }
@@ -321,19 +323,37 @@ std::shared_ptr<MeshEntry> meshLookup(const uint8_t* p, size_t len, bool useCach
 }
 
 // Returns false if cancelled (deadline or kill, polled every 256 points) before all points were done.
-bool containsCpu(MeshEntry& me, const std::vector<double>& pts, string* verdicts, bool (*cancel)(void*), void* cancelArg) {
+bool containsCpu(MeshEntry& me, const std::vector<double>& pts, string* verdicts, bool (*cancel)(void*), void* cancelArg, uint32_t threads = 1) {
     const meshvol::Packed& m = me.m;
     const size_t n = pts.size() / 3;
     verdicts->resize(n);
     const bool useBvh = n >= 8;                     // a tree pays for itself only with several points; the verdicts are identical either way
     const meshcontains::Bvh* bvh = useBvh ? &me.cpuBvh() : nullptr;
-    std::vector<uint32_t> scratch;
-    for (size_t i = 0; i < n; i++) {
-        if ((i & 255) == 255 && cancel(cancelArg)) return false;
-        const auto v = useBvh ? meshcontains::classifyBvh(m.v, m.t, *bvh, &pts[3 * i], &scratch) : meshcontains::classify(m.v, m.t, &pts[3 * i]);
-        (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
+    auto work = [&](size_t b, size_t e, const std::atomic<bool>* stop) -> bool {
+        std::vector<uint32_t> scratch;
+        for (size_t i = b; i < e; i++) {
+            if (stop && (i & 255) == 255 && stop->load()) return false;
+            const auto v = useBvh ? meshcontains::classifyBvh(m.v, m.t, *bvh, &pts[3 * i], &scratch) : meshcontains::classify(m.v, m.t, &pts[3 * i]);
+            (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
+        }
+        return true;
+    };
+    if (threads <= 1 || n < 2048) {   // one thread: poll the host's cancel hook directly, as before
+        std::vector<uint32_t> scratch;
+        for (size_t i = 0; i < n; i++) {
+            if ((i & 255) == 255 && cancel(cancelArg)) return false;
+            const auto v = useBvh ? meshcontains::classifyBvh(m.v, m.t, *bvh, &pts[3 * i], &scratch) : meshcontains::classify(m.v, m.t, &pts[3 * i]);
+            (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
+        }
+        return true;
     }
-    return true;
+    // several threads: workers only read an atomic stop flag; the calling thread alone talks to the host (the cancel hook is not assumed thread-safe)
+    std::atomic<bool> stop{false}; std::atomic<uint32_t> done{0}; std::vector<std::thread> th; const uint32_t T = std::min<uint32_t>(threads, 64);
+    for (uint32_t w = 0; w < T; w++) th.emplace_back([&, w] { work(n * w / T, n * (w + 1) / T, &stop); done++; });
+    bool cancelled = false;
+    while (done.load() < T) { if (!cancelled && cancel(cancelArg)) { cancelled = true; stop = true; } std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    for (auto& t : th) t.join();
+    return !cancelled;
 }
 bool containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o, bool (*cancel)(void*), void* cancelArg) {
     if (!bm::validateDoc(d, len)) { o.code = meshvol::kBadDocument; return true; }
@@ -352,7 +372,7 @@ bool containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o, bool
         if (r == 1) return true;
         if (r == 2) return false;
     }
-    return containsCpu(*me, pts, &o.verdicts, cancel, cancelArg);
+    return containsCpu(*me, pts, &o.verdicts, cancel, cancelArg, spec.cpuThreads);
 }
 
 // Returns false if cancelled (deadline or kill) before every document was done.

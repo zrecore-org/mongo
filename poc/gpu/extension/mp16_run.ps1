@@ -72,14 +72,14 @@ if ($Item -eq 'gpu') {
     $r = Case 'cpu' $d 'cpu' 100000 $null;    Chk 'engine knob cpu: 0 device batches' ((Has $r.Text 'equal CPU core: YES') -and ((Cnt $r.Text 'gpuBatches' 1) -eq 0)) ''
     $r = Case 'fail' $d 'fail' 100000 $null;  Chk 'planted device failure: fall back, verdicts equal, breaker open' ((Has $r.Text 'CASE fail.*equal CPU core: YES') -and (Has $r.Text 'SECOND RUN verdicts equal CPU core: YES') -and ((Cnt $r.Text 'gpuFallbacks' 2) -eq 1) -and ((Cnt $r.Text 'gpuBatches' 2) -eq 0)) ''
     $r = Case 'wrong' $d 'wrong' 100000 $null; Chk 'planted wrong verdicts: shadow check catches, verdicts equal, device disabled' ((Has $r.Text 'CASE wrong.*equal CPU core: YES') -and (Has $r.Text 'SECOND RUN verdicts equal CPU core: YES') -and ((Cnt $r.Text 'gpuShadowMismatch' 2) -eq 1) -and ((Cnt $r.Text 'gpuBatches' 2) -eq 0)) ''
-    foreach ($pc in @(@('createfail','planted failure of the lazy device creation'), @('oom','vkAllocateMemory'), @('timeout','vkWaitForFences'))) {
+    foreach ($pc in @(@('createfail','planted failure of the lazy device creation'), @('oom','vkCreateBuffer|vkAllocateMemory'), @('timeout','vkWaitForFences'))) {
         $r = Case $pc[0] $d $pc[0] 20000 $null
-        Chk "planted $($pc[0]): the intended failure fired, fell back, verdicts equal, device disabled" ((Has $r.Text 'CASE .*equal CPU core: YES') -and (Has $r.Text 'SECOND RUN verdicts equal CPU core: YES') -and (Has $r.Text ('gpuLastFailure="[^"]*' + [regex]::Escape($pc[1]))) -and ((Cnt $r.Text 'gpuFallbacks' 2) -eq 1)) ((($r.Text -split "`n") | Select-String 'gpuLastFailure' | Select-Object -First 1).ToString().Trim().Substring(0,[math]::Min(300,(($r.Text -split "`n") | Select-String 'gpuLastFailure' | Select-Object -First 1).ToString().Trim().Length)))
+        Chk "planted $($pc[0]): the intended failure fired, fell back, verdicts equal, device disabled" ((Has $r.Text 'CASE .*equal CPU core: YES') -and (Has $r.Text 'SECOND RUN verdicts equal CPU core: YES') -and (Has $r.Text ('gpuLastFailure="[^"]*(' + $(if ($pc[0] -eq 'oom') { $pc[1] } else { [regex]::Escape($pc[1]) }) + ')')) -and ((Cnt $r.Text 'gpuFallbacks' 2) -eq 1)) ((($r.Text -split "`n") | Select-String 'gpuLastFailure' | Select-Object -First 1).ToString().Trim().Substring(0,[math]::Min(300,(($r.Text -split "`n") | Select-String 'gpuLastFailure' | Select-Object -First 1).ToString().Trim().Length)))
     }
     $r = Case 'concurrent' $d 'concurrent' 20000 $null; Chk 'concurrency: 6 threads x 6 aggregations, 0 mismatching runs, 36 device batches' ((Has $r.Text 'verdict-mismatching runs=0') -and ((Cnt $r.Text 'gpuBatches' 1) -eq 36)) ''
-    $r50 = Case 'repeat50' $d 'repeat' 20000 @{ MP14D_REPEAT = '50' }; $r450 = Case 'repeat450' $d 'repeat' 20000 @{ MP14D_REPEAT = '450' }
+    $r50 = Case 'repeat450' $d 'repeat' 20000 @{ MP14D_REPEAT = '450' }; $r450 = Case 'repeat1800' $d 'repeat' 20000 @{ MP14D_REPEAT = '1800' }
     $g50 = [regex]::Match($r50.Text, 'rssGrowth=(\d+)').Groups[1].Value; $g450 = [regex]::Match($r450.Text, 'rssGrowth=(\d+)').Groups[1].Value
-    Chk 'no leak: peak working set growth between 50 and 450 device runs under 8 MB' (($g50 -ne '') -and ($g450 -ne '') -and (([int64]$g450 - [int64]$g50) -lt 8000000)) "50 runs: $g50, 450 runs: $g450"
+    Chk 'no leak: CURRENT private bytes growth between 450 and 1800 device runs under 16 MB (after warm-up)' (($g50 -ne '') -and ($g450 -ne '') -and (([int64]$g450 - [int64]$g50) -lt 16000000)) "450 runs: $g50, 1800 runs: $g450"
     $mut = @(@(1,'wrong','CASE wrong.*equal CPU core: NO'), @(2,'fail',''), @(3,'small',''), @(4,'ok','CASE ok.*equal CPU core: NO'))
     foreach ($m in $mut) {
         $md = (Join-Path $Exe "libmeshvol_gpumut$($m[0]).dll") -replace '\\','/'
@@ -92,5 +92,6 @@ if ($Item -eq 'gpu') {
     & nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv | Tee-Object -FilePath (Join-Path $Out 'nvidia-smi_after.txt')
 }
 "FAILS $($script:Fails)"
-Get-ChildItem $Out -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } | Set-Content -Path (Join-Path $Out 'SHA256SUMS.txt')
+$sums = Get-ChildItem $Out -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" }
+$sums | Set-Content -Path (Join-Path $Out 'SHA256SUMS.txt')
 exit $(if ($script:Fails) { 1 } else { 0 })

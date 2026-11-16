@@ -966,7 +966,7 @@ int runContainsGpu(const string& dir, const string& which, size_t npts) {
     string ref; for (size_t i = 0; i < pts.size() / 3; i++) { auto k = meshcontains::classify(sp.v, sp.t, &pts[3*i]); ref += k == meshcontains::kIn ? 'I' : k == meshcontains::kOn ? 'B' : 'O'; }
     auto sp2 = spec([&](bm::Builder& b) {
         if (which == "ok" || which == "fail" || which == "wrong") b.i32("gpuMinPoints", 1);
-        if (which == "cpu") { b.i32("gpuMinPoints", 1); b.str("engine", "cpu"); }
+        if (which == "cpu") { b.i32("gpuMinPoints", 1); b.str("engine", "cpu"); if (getenv("MP14D_CPU_THREADS")) b.i32("cpuThreads", atoi(getenv("MP14D_CPU_THREADS"))); }
         if (which == "fail") b.str("plant", "gpuFail");
         if (which == "wrong") b.str("plant", "gpuWrong");
         if (which == "createfail" || which == "oom" || which == "timeout") { b.i32("gpuMinPoints", 1); b.str("plant", which == "createfail" ? "gpuCreateFail" : which == "oom" ? "gpuOOM" : "gpuTimeout"); }
@@ -981,7 +981,7 @@ int runContainsGpu(const string& dir, const string& which, size_t npts) {
         const int threads = which == "concurrent" ? 6 : 1, runsEach = which == "concurrent" ? 6 : (getenv("MP14D_REPEAT") ? atoi(getenv("MP14D_REPEAT")) : 150);
         std::atomic<int> bad{0}, done{0};
         #ifdef _WIN32
-        auto rss = [] { PROCESS_MEMORY_COUNTERS pmc; GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof pmc); return (long)pmc.PeakWorkingSetSize; };   // bytes
+        auto rss = [] { PROCESS_MEMORY_COUNTERS_EX pmc; GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof pmc); return (long)pmc.PrivateUsage; };   // CURRENT private bytes (the peak working set is noisy: driver warm-up)
 #else
         auto rss = [] { struct rusage ru; getrusage(RUSAGE_SELF, &ru); return (long)ru.ru_maxrss; };   // bytes on macOS, KiB on Linux
 #endif
