@@ -130,3 +130,10 @@ Windows loader work in the fork, from reading the code:
 - C: NTFS, 16.9 GB free (too small for a Bazel tree). D: exFAT, 676 GB free (no symlinks or hardlinks, so a Bazel output base there is a risk). No other NTFS volume.
 - git 2.45.2; system core.symlinks=false; this user lacks SeCreateSymbolicLinkPrivilege and Developer Mode is off, so symlinks on C: fail non-elevated.
 Blockers all need the Windows user's approval: an NTFS VHDX on D:, long paths, installing Python and Bazel, a .bazelrc.local override for VS 17.10, VS Community licence fit. Not started.
+
+### MP16 step 2/3 progress (2026-11-16, PowerShell agent aalbino-1f on the Windows machine)
+- Windows toolchain now in place: Python 3.13 + bazelisk under D:\tools; NTFS image B: (Developer Mode fixed after my wrong registry value name); fork cloned to B:\mongo with real symlinks; long paths on; VS 2026 (14.52.37025, ATL, SDK 10.0.26100.0) at D:\VS2026.
+- Fork edits (commits 36557e2acd7, fd3ba05a30b): Windows extension loader without signature validation; --loadExtensions allowed on Windows; //release-container uv import removed from MODULE.bazel (the directory is not in the tree).
+- Loader-only check: `bazel build --config=local --jobs=3 --copt=/wd4018 //src/mongo/db/extension/host:extension_loader` succeeded. Without the flag the newer compiler fails on builder.h:845 (C4018 as error), the repo's "newer than supported compiler" case (--disable_warnings_as_errors=True is the sanctioned switch).
+- Uncommitted on Windows: LOCAL PATCH windows_cc_configure.bzl:453 (SDK path C: -> D:; to be replaced by an env-var-based fix), regenerated MODULE.bazel.lock.
+- Not done: full mongod build (multi-hour; waits for the owner's go), real Windows mongod run with the extension (MP16 step 4), ownership/ACL check on Windows, secure-mode signing.
