@@ -44,6 +44,9 @@ __attribute__((noinline)) int collide_me() { return 1; }
 namespace {
 using std::string;
 string configDoc();  // MP14c, defined below
+#ifdef MESHCONTAINS_RATIO
+string ratioReport();
+#endif
 const char* engineName();
 struct Spec;
 bool gpuEligible(const Spec& spec, size_t nPoints);   // MP14d, defined after the configuration
@@ -621,7 +624,11 @@ string configDoc() {
     bm::Builder b;
     b.boolean("gpuRequested", g_cfg.gpu).boolean("gpuRequired", g_cfg.gpuRequired).boolean("gpuProbed", g_cfg.gpuProbed)
         .boolean("gpuReady", g_cfg.gpuReady).str("engine", engineName()).str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes)
-        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure).i64("usTree", g_tTree).i64("usRayBox", gpupip::times().rayBox).i64("usAllocCopy", gpupip::times().allocCopy).i64("usSubmitWait", gpupip::times().submitWait).i64("usCopyOut", gpupip::times().copyOut).i64("usResolveShadow", g_tResolveShadow).i64("meshCacheHits", g_meshCacheHits).i64("meshCacheMisses", g_meshCacheMisses);
+        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure).i64("usTree", g_tTree).i64("usRayBox", gpupip::times().rayBox).i64("usAllocCopy", gpupip::times().allocCopy).i64("usSubmitWait", gpupip::times().submitWait).i64("usCopyOut", gpupip::times().copyOut).i64("usResolveShadow", g_tResolveShadow)
+#ifdef MESHCONTAINS_RATIO
+        .str("ratio", ratioReport())
+#endif
+        .i64("meshCacheHits", g_meshCacheHits).i64("meshCacheMisses", g_meshCacheMisses);
     return b.finish();
 }
 
@@ -694,6 +701,15 @@ int containsGpu(MeshEntry& me, const std::vector<double>& pts, const Spec& spec,
 }
 
 // ------------------------------------------------------------------ probes
+#ifdef MESHCONTAINS_RATIO
+string ratioReport() {   // MP17 experiment: cumulative resolved fractions of an fp32 filter on this workload (single CPU thread only)
+    const auto& R = meshcontains::g_ratio;
+    auto cum = [](const long* h, int K) { long tot = 0, ok = 0; for (int b = 0; b < 65; b++) { tot += h[b]; if (b <= K) ok += h[b]; } return tot ? (double)ok / (double)tot : 0.0; };
+    long t3 = 0; for (int b = 0; b < 65; b++) t3 += R.o3[b];
+    char buf[400]; std::snprintf(buf, sizeof buf, "steps=%ld o3calls=%ld o3dbl=%.4f o3fp32=%.4f o3fp32x8=%.4f o3fp32x64=%.4f o2dbl=%.4f o2fp32=%.4f", R.steps, t3, cum(R.o3, 49), cum(R.o3, 20), cum(R.o3, 17), cum(R.o3, 14), cum(R.o2, 50), cum(R.o2, 21));
+    return buf;
+}
+#endif
 string countersDoc() {
     bm::Builder b;
     b.i64("computeCalls", g_computeCalls).i64("sourcePulls", g_sourcePulls).i64("getNextCalls", g_getNextCalls).i64("throwsCaught", g_throwsCaught)

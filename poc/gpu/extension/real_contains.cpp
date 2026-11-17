@@ -58,5 +58,16 @@ int main(int argc, char** argv) {
         std::printf("%-8s tris=%-7zu queries=%-6zu disagreements=%ld\n", id.c_str(), c.m.nt(), n, mb); std::fflush(stdout);
     }
     std::printf("TOTAL models=%d queries=%ld (OUT %ld, IN %ld, ON %ld) disagreements=%ld resolved-verdict hash=%016llx\n", models, total, nout, nin, on, bad, (unsigned long long)h);
+#ifdef MESHCONTAINS_RATIO
+    {   // MP17: fraction of the double filter's in-window determinants that an fp32 filter (error factor u*(7+56u) with u = 2^-24, plus a slack factor for the rounding of the inputs) would still resolve
+        const auto& R = meshcontains::g_ratio;
+        auto cum = [](const long* h, int K) { long tot = 0, ok = 0; for (int b = 0; b < 65; b++) { tot += h[b]; if (b <= K) ok += h[b]; } return tot ? (double)ok / (double)tot : 0.0; };
+        long t3 = 0, t2 = 0; for (int b = 0; b < 65; b++) { t3 += R.o3[b]; t2 += R.o2[b]; }
+        std::printf("RATIO triangle steps=%ld per query=%.1f; orient3d calls=%ld orient2d calls=%ld (threads must be 1)\n", R.steps, total ? (double)R.steps / (double)total : 0.0, t3, t2);
+        // orient3d: pass iff ratio > B, B = 4.17e-7 * slack; bucket b = floor(-log2 ratio), ratio > 2^-(b+1): pass when b <= K, K = floor(-log2 B) - 1
+        for (const auto& kv : std::vector<std::pair<const char*, int>>{{"double (B=7.8e-16)", 49}, {"fp32 B=4.2e-7 (no input slack)", 20}, {"fp32 x8 slack", 17}, {"fp32 x64 slack", 14}, {"fp32 x1024 slack", 10}})
+            std::printf("RATIO orient3d resolved by %-32s %.4f   orient2d %.4f\n", kv.first, cum(R.o3, kv.second), cum(R.o2, kv.second + 1));
+    }
+#endif
     return bad == 0 ? 0 : 1;
 }

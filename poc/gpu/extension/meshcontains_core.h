@@ -26,6 +26,20 @@ inline thread_local Counters g_cnt;
 #else
 #define MC_COUNT(f) ((void)0)
 #endif
+#ifdef MESHCONTAINS_RATIO
+// MP17 experiment (not shipped): how close to the error bound the double filter's determinant is. Bucket b = floor(-log2(|det| / permanent)), clamped to [0, 63];
+// "exact" counts calls that fell through to the exact path. Used to estimate what an fp32 filter would resolve.
+struct RatioStats { long o2[65] = {}, o3[65] = {}, o2Exact = 0, o3Exact = 0, steps = 0; };
+inline RatioStats g_ratio;   // plain global: run with one worker thread
+inline void ratioNote(long* h, double det, double perm) { if (!(perm > 0)) { h[64]++; return; } const double r = std::fabs(det) / perm; if (r <= 0) { h[63]++; return; } int b = (int)std::floor(-std::log2(r)); h[b < 0 ? 0 : b > 63 ? 63 : b]++; }
+#define MC_RATIO2(det, perm) ::meshcontains::ratioNote(::meshcontains::g_ratio.o2, (det), (perm))
+#define MC_RATIO3(det, perm) ::meshcontains::ratioNote(::meshcontains::g_ratio.o3, (det), (perm))
+#define MC_STEP() (++::meshcontains::g_ratio.steps)
+#else
+#define MC_RATIO2(det, perm) ((void)0)
+#define MC_RATIO3(det, perm) ((void)0)
+#define MC_STEP() ((void)0)
+#endif
 #ifndef MESHCONTAINS_MUT
 #define MESHCONTAINS_MUT 0
 #endif
@@ -59,6 +73,7 @@ inline int orient2dSign(const double* a, const double* b, const double* c) {
     if (inWindow(d0, 1e-150, 1e150) && inWindow(d1, 1e-150, 1e150) && inWindow(d2, 1e-150, 1e150) && inWindow(d3, 1e-150, 1e150)) {
         const double l = d0 * d1, r = d2 * d3, det = l - r;
         const double bound = 3.3306690738754716e-16 * (std::fabs(l) + std::fabs(r));   // ccwerrboundA = (3 + 16 eps) eps, eps = 2^-53
+        MC_RATIO2(det, std::fabs(l) + std::fabs(r));
         if (det > bound) { MC_COUNT(o2Filter); return 1; }
         if (det < -bound) { MC_COUNT(o2Filter); return -1; }
 #if MESHCONTAINS_MUT == 11
@@ -80,7 +95,8 @@ inline int orient3dSign(const double* a, const double* b, const double* c, const
         const double det = adz * (bdxcdy - cdxbdy) + bdz * (cdxady - adxcdy) + cdz * (adxbdy - bdxady);
         const double permanent = (std::fabs(bdxcdy) + std::fabs(cdxbdy)) * std::fabs(adz) + (std::fabs(cdxady) + std::fabs(adxcdy)) * std::fabs(bdz) +
                                  (std::fabs(adxbdy) + std::fabs(bdxady)) * std::fabs(cdz);
-        #if MESHCONTAINS_MUT == 13
+                MC_RATIO3(det, permanent);
+#if MESHCONTAINS_MUT == 13
         const double bound = 7.771561172376103e-18 * permanent;   // mutant: bound 100x too small
 #else
         const double bound = 7.771561172376103e-16 * permanent;
@@ -140,6 +156,7 @@ inline bool coplanarInClosedTriangle(const double* a, const double* b, const dou
 // One triangle's contribution for query p: returns true when p is exactly on this closed triangle (verdict kOn), else adds 0 or 1 to *crossings.
 // A triangle whose yz bounding box (compared exactly, doubles) does not contain p's (y, z) can neither be crossed by the +x ray through p' nor contain p.
 inline bool triangleStep(const std::vector<double>& v, const std::vector<uint32_t>& t, size_t k, const double* p, int* crossings) {
+    MC_STEP();
     const double* a = &v[3 * (size_t)t[3 * k]];
     const double* b = &v[3 * (size_t)t[3 * k + 1]];
     const double* c = &v[3 * (size_t)t[3 * k + 2]];
