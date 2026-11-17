@@ -4,6 +4,8 @@
 // n-1+k, outward-rounded binary32 boxes), not by the MP10 device build, so only one kernel is needed. The caller resolves every UNCERTAIN verdict with the exact CPU path:
 // the device answer is only trusted when it is definite.
 #pragma once
+#include <atomic>
+#include <chrono>
 #include "meshvol_core.h"
 #include "vkctx.h"
 #include "pip_bvh_spv.h"
@@ -17,6 +19,10 @@
 #include <vector>
 
 namespace gpupip {
+// MP17 stage timers (microseconds, cumulative), read by the extension's config probe
+struct Times { std::atomic<long long> rayBox{0}, allocCopy{0}, submitWait{0}, copyOut{0}; };
+inline Times& times() { static Times t; return t; }
+inline long long nowUs() { return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 inline float roundDown(double x) { float f = (float)x; if ((double)f > x) f = std::nextafterf(f, -INFINITY); return f; }
 inline float roundUp(double x) { float f = (float)x; if ((double)f < x) f = std::nextafterf(f, INFINITY); return f; }
 
@@ -90,7 +96,9 @@ struct Engine {
             if (!ensure()) { *err = failure; return false; }
             const size_t nq = pts.size() / 3, n = t.size() / 3;
             if (!nq || !n) { out->assign(nq, 0); return true; }
+            const long long t0 = nowUs();
             std::vector<float> qb(6 * nq); for (size_t i = 0; i < nq; i++) rayBox(&pts[3 * i], &qb[6 * i]);
+            times().rayBox += nowUs() - t0; const long long t1 = nowUs();
             gpu::Buf bV{}, bT{}, bQ{}, bQB{}, bNB{}, bL{}, bR{}, bI{}, bMQ{}, bMT{}, bO{}, bHuge{};
             bool submitted = false;   // once work has been submitted, a failure may leave it running on the device: then nothing is freed (leaked on purpose) and the engine is poisoned
             auto freeAll = [&] { for (gpu::Buf* b : {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT, &bO}) if (b->size) ctx.release(*b); };
@@ -101,13 +109,17 @@ struct Engine {
                 std::memcpy(bNB.ptr, tree.nb.data(), tree.nb.size() * 4); std::memcpy(bL.ptr, tree.lc.data(), n * 4); std::memcpy(bR.ptr, tree.rc.data(), n * 4); std::memcpy(bI.ptr, tree.idx.data(), n * 4);
                 if (plant == "gpuOOM") bHuge = ctx.alloc((size_t)1 << 46);   // the driver must refuse: out of device memory mid-batch
                 const uint32_t pc[3] = {(uint32_t)nq, (uint32_t)n, 0u};
+                times().allocCopy += nowUs() - t1;
                 ctx.begin();
                 for (gpu::Buf* b : {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT}) ctx.upload(*b);
                 ctx.dispatch(kernel, {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT, &bO}, pc, (uint32_t)((nq + 63) / 64));
                 ctx.download(bO);
                 submitted = true;
+                const long long t2 = nowUs();
                 ctx.submitWait(plant == "gpuTimeout" ? 1ull : timeoutNs);   // finite: a hung device must not make the stage unkillable
+                const long long t3 = nowUs(); times().submitWait += t3 - t2;
                 out->assign((uint32_t*)bO.ptr, (uint32_t*)bO.ptr + nq);
+                times().copyOut += nowUs() - t3;
             } catch (...) { if (!submitted) freeAll(); else leaked++; throw; }   // in-flight work may still read these buffers: never free them after a failed wait
             freeAll(); runs++; return true;
         } catch (const std::exception& e) { *err = e.what(); failed = true; failure = *err; return false; }   // a failed submission poisons the context: do not reuse it

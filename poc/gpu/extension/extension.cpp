@@ -454,6 +454,7 @@ struct Config {
     string gpuReason = "not requested";
 };
 Config g_cfg;
+std::atomic<long long> g_tTree{0}, g_tResolveShadow{0};   // MP17 timers (us)
 std::atomic<long> g_vulkanProbes{0}, g_gpuBatches{0}, g_gpuFallbacks{0}, g_gpuShadowMismatch{0}, g_gpuUncertain{0}, g_gpuPoints{0};
 string vulkanProbe();
 
@@ -620,7 +621,7 @@ string configDoc() {
     bm::Builder b;
     b.boolean("gpuRequested", g_cfg.gpu).boolean("gpuRequired", g_cfg.gpuRequired).boolean("gpuProbed", g_cfg.gpuProbed)
         .boolean("gpuReady", g_cfg.gpuReady).str("engine", engineName()).str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes)
-        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure).i64("meshCacheHits", g_meshCacheHits).i64("meshCacheMisses", g_meshCacheMisses);
+        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure).i64("usTree", g_tTree).i64("usRayBox", gpupip::times().rayBox).i64("usAllocCopy", gpupip::times().allocCopy).i64("usSubmitWait", gpupip::times().submitWait).i64("usCopyOut", gpupip::times().copyOut).i64("usResolveShadow", g_tResolveShadow).i64("meshCacheHits", g_meshCacheHits).i64("meshCacheMisses", g_meshCacheMisses);
     return b.finish();
 }
 
@@ -651,11 +652,14 @@ int containsGpu(MeshEntry& me, const std::vector<double>& pts, const Spec& spec,
     std::lock_guard<std::mutex> lk(E.mutex);
     if (g_gpuDisabled.load()) return 0;
     if (cancel(cancelArg)) return 2;
+    const long long tt0 = gpupip::nowUs();
     std::call_once(me.treeOnce, [&] { me.tree = gpupip::buildTree(m.v, m.t); });
+    g_tTree += gpupip::nowUs() - tt0;
     const gpupip::Tree& tree = me.tree;
     std::vector<uint32_t> dv; string err;
     if (!E.classify(m.v, m.t, tree, pts, &dv, 10'000'000'000ull, &err, spec.plant)) return fallback(err);
     if (spec.plant == "gpuWrong") for (size_t i = 0; i < n; i += 64) if (dv[i] != 2) dv[i] ^= 1;   // planted: wrong definite verdicts where the shadow check looks
+    const long long tr0 = gpupip::nowUs();
     const meshcontains::Bvh& bvh = me.cpuBvh();
     std::vector<uint32_t> scratch;
     verdicts->assign(n, 'O');
@@ -681,6 +685,7 @@ int containsGpu(MeshEntry& me, const std::vector<double>& pts, const Spec& spec,
         const char want = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
         if ((*verdicts)[i] != want) { g_gpuShadowMismatch++; return fallback("shadow check mismatch at point " + std::to_string(i)); }
     }
+    g_tResolveShadow += gpupip::nowUs() - tr0;
     g_gpuBatches++; g_gpuPoints += (long)n; g_gpuUncertain += uncertain;
     return 1;
 #else
