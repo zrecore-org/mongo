@@ -5,6 +5,7 @@
 // the device answer is only trusted when it is definite.
 #pragma once
 #include <atomic>
+#include <cstdlib>
 #include <chrono>
 #include "meshvol_core.h"
 #include "vkctx.h"
@@ -112,7 +113,7 @@ struct Engine {
                 times().allocCopy += nowUs() - t1;
                 ctx.begin();
                 for (gpu::Buf* b : {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT}) ctx.upload(*b);
-                ctx.dispatch(kernel, {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT, &bO}, pc, (uint32_t)((nq + 63) / 64));
+                ctx.dispatch(kernel, {&bV, &bT, &bQ, &bQB, &bNB, &bL, &bR, &bI, &bMQ, &bMT, &bO}, pc, std::getenv("MESHVOL_FLOOR") ? 1u : (uint32_t)((nq + 63) / 64));   // MESHVOL_FLOOR: MP17 timing experiment, one workgroup (wrong verdicts, measures the submission floor)
                 ctx.download(bO);
                 submitted = true;
                 const long long t2 = nowUs();
