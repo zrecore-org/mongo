@@ -528,11 +528,12 @@ def _impl(ctx):
                 ),
                 flag_set(
                     actions = all_link_actions,
-                    flag_groups = [
-                        flag_group(
-                            flags = [ctx.attr.fastbuild_mode_debug_flag, "/INCREMENTAL:NO"],
-                        ),
-                    ],
+                    flag_groups = [flag_group(flags = ["/INCREMENTAL:NO"])],
+                ),
+                flag_set(
+                    actions = all_link_actions,
+                    flag_groups = [flag_group(flags = [ctx.attr.fastbuild_mode_debug_flag])],
+                    with_features = [with_feature_set(not_features = ["no_link_debug_info"])],
                 ),
             ],
             implies = ["generate_pdb_file"],
@@ -659,11 +660,12 @@ def _impl(ctx):
                 ),
                 flag_set(
                     actions = all_link_actions,
-                    flag_groups = [
-                        flag_group(
-                            flags = [ctx.attr.dbg_mode_debug_flag, "/INCREMENTAL:NO"],
-                        ),
-                    ],
+                    flag_groups = [flag_group(flags = ["/INCREMENTAL:NO"])],
+                ),
+                flag_set(
+                    actions = all_link_actions,
+                    flag_groups = [flag_group(flags = [ctx.attr.dbg_mode_debug_flag])],
+                    with_features = [with_feature_set(not_features = ["no_link_debug_info"])],
                 ),
             ],
             implies = ["generate_pdb_file"],
@@ -1470,6 +1472,7 @@ def _impl(ctx):
                             flags = ["/DEBUG"],
                         ),
                     ],
+                    with_features = [with_feature_set(not_features = ["no_link_debug_info"])],
                 ),
             ],
         )
@@ -1551,6 +1554,11 @@ def _impl(ctx):
             ],
         )
 
+        # Opt-in (`--features=no_link_debug_info`): the link actions get no /DEBUG, /DEBUG:FASTLINK/FULL and /pdbpagesize flags (compile keeps /Z7, so object files still carry
+        # debug info). The toolchain appends those flags after any --linkopt, so this is the only way to link a binary such as mongod without writing a PDB; the full link of
+        # mongod_with_debug.exe runs the linker out of memory (LNK1102) otherwise. Off by default: no change for anyone else.
+        no_link_debug_info_feature = feature(name = "no_link_debug_info", enabled = False)
+
         # Windows non optimized builds will cause the PDB to blow up in size, this
         # allows a larger PDB. The flag is undocumented at the time of writing but the
         # microsoft thread which brought about its creation can be found here:
@@ -1569,6 +1577,7 @@ def _impl(ctx):
                             flags = ["/pdbpagesize:16384"],
                         ),
                     ],
+                    with_features = [with_feature_set(not_features = ["no_link_debug_info"])],
                 ),
             ],
         )
@@ -1681,6 +1690,7 @@ def _impl(ctx):
             opt_size_feature,
             stack_frame_error_checking_feature,
             pdb_page_size_feature,
+            no_link_debug_info_feature,
             incremental_feature,
             mongo_defines_feature,
         ]
