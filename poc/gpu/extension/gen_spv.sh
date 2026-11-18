@@ -3,7 +3,7 @@
 # pip_filter.inc, orient_filter.inc (Apache-2.0) and gpu/shaders/f64soft.inc (derived from MongoDB's DoubleDoubleSummation, SSPL-1.0), copied at exactmesh commit b9a6590 or later.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"; GLSLC="${GLSLC:-$HOME/VulkanSDK/1.3.283.0/macOS/bin/glslc}"
-"$GLSLC" --target-env=vulkan1.2 -O0 -I "$HERE/gpu_src" -o /tmp/pip_bvh.spv "$HERE/gpu_src/pip_bvh.comp"
+"$GLSLC" --target-env=vulkan1.2 -O0 $EXTRA -I "$HERE/gpu_src" -o /tmp/pip_bvh.spv "$HERE/gpu_src/pip_bvh.comp"
 python3 - "$HERE" <<'PY'
 import struct,sys
 d=open('/tmp/pip_bvh.spv','rb').read(); w=struct.unpack('<%dI'%(len(d)//4),d)
