@@ -9,6 +9,10 @@
 // Mesh id: triangle k of the scene belongs to mesh tmesh[k]; a query only counts triangles of its own mesh (queries of mesh m carry m in qmesh).
 // Planted mutants (-DBMUT=n): 2 stack overflow ignored (the walk just stops: parity left as it is), 5 right child dropped after a left-child hit.
 // BMUT=1 makes the box overlap strict (same test as lbvh_common.glsl, which cannot be included here: f64soft.inc defines a MUT macro of its own). PMUT=1..5 as in pip_ray.comp.
+// MP17: the binary32 pre-filter (pip_filter.inc, FP32PRE) is on by default; -DNOFP32PRE builds the soft-binary64-only kernel.
+#ifndef NOFP32PRE
+#define FP32PRE
+#endif
 #include "f64soft.inc"
 #include "orient_filter.inc"
 #include "pip_filter.inc"
