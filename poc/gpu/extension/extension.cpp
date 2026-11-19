@@ -358,18 +358,22 @@ bool containsCpu(MeshEntry& me, const std::vector<double>& pts, string* verdicts
     for (auto& t : th) t.join();
     return !cancelled;
 }
+extern std::atomic<long long> g_tParse, g_tLookup;
 bool containsDoc(const Spec& spec, const uint8_t* d, size_t len, DocOut& o, bool (*cancel)(void*), void* cancelArg) {
+    const long long tp0 = gpupip::nowUs();
     if (!bm::validateDoc(d, len)) { o.code = meshvol::kBadDocument; return true; }
     bm::Elem e;
     if (!bm::findField(d, len, spec.input, &e)) { o.code = meshvol::kMissingField; return true; }
     if (e.type != bm::kBinData) { o.code = meshvol::kNotBinData; return true; }
     if (e.val[4] != 0) { o.code = meshvol::kBadSubtype; return true; }
     auto me = meshLookup(e.val + 5, e.vlen - 5, spec.meshCache);
+    g_tLookup += gpupip::nowUs() - tp0;
     if ((o.code = me->code) != meshvol::kOk) return true;
     bm::Elem pe;
     if (!bm::findField(d, len, spec.points, &pe)) { o.code = meshvol::kMissingField; return true; }
     std::vector<double> pts;
     if ((o.code = readPoints(pe, &pts)) != meshvol::kOk) return true;
+    g_tParse += gpupip::nowUs() - tp0;
     if (gpuEligible(spec, pts.size() / 3)) {
         const int r = containsGpu(*me, pts, spec, &o.verdicts, cancel, cancelArg);
         if (r == 1) return true;
@@ -457,7 +461,7 @@ struct Config {
     string gpuReason = "not requested";
 };
 Config g_cfg;
-std::atomic<long long> g_tTree{0}, g_tResolveShadow{0};   // MP17 timers (us)
+std::atomic<long long> g_tTree{0}, g_tResolveShadow{0}, g_tParse{0}, g_tLookup{0};   // MP17 timers (us)
 std::atomic<long> g_vulkanProbes{0}, g_gpuBatches{0}, g_gpuFallbacks{0}, g_gpuShadowMismatch{0}, g_gpuUncertain{0}, g_gpuPoints{0};
 string vulkanProbe();
 
@@ -624,7 +628,7 @@ string configDoc() {
     bm::Builder b;
     b.boolean("gpuRequested", g_cfg.gpu).boolean("gpuRequired", g_cfg.gpuRequired).boolean("gpuProbed", g_cfg.gpuProbed)
         .boolean("gpuReady", g_cfg.gpuReady).str("engine", engineName()).str("reason", g_cfg.gpuReason).i64("vulkanProbes", g_vulkanProbes)
-        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure).i64("usTree", g_tTree).i64("usRayBox", gpupip::times().rayBox).i64("usAllocCopy", gpupip::times().allocCopy).i64("usSubmitWait", gpupip::times().submitWait).i64("usCopyOut", gpupip::times().copyOut).i64("usResolveShadow", g_tResolveShadow)
+        .i64("gpuBatches", g_gpuBatches).i64("gpuFallbacks", g_gpuFallbacks).i64("gpuShadowMismatch", g_gpuShadowMismatch).i64("gpuUncertain", g_gpuUncertain).i64("gpuPoints", g_gpuPoints).str("gpuLastFailure", g_gpuLastFailure).i64("usTree", g_tTree).i64("usRayBox", gpupip::times().rayBox).i64("usAllocCopy", gpupip::times().allocCopy).i64("usSubmitWait", gpupip::times().submitWait).i64("usCopyOut", gpupip::times().copyOut).i64("usResolveShadow", g_tResolveShadow).i64("usLookup", g_tLookup).i64("usParseTotal", g_tParse)
 #ifdef MESHCONTAINS_RATIO
         .str("ratio", ratioReport())
 #endif
