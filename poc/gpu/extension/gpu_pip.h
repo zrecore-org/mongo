@@ -17,6 +17,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace gpupip {
@@ -98,7 +99,13 @@ struct Engine {
             const size_t nq = pts.size() / 3, n = t.size() / 3;
             if (!nq || !n) { out->assign(nq, 0); return true; }
             const long long t0 = nowUs();
-            std::vector<float> qb(6 * nq); for (size_t i = 0; i < nq; i++) rayBox(&pts[3 * i], &qb[6 * i]);
+            std::vector<float> qb(6 * nq);
+            {   // MP17: the ray boxes are independent per point; split large batches over a few threads (the boxes are pure functions of the points, so the result is identical)
+                const unsigned hw = std::thread::hardware_concurrency(); const size_t nt = nq < 65536 ? 1 : std::min<size_t>(hw ? hw : 1, 8);
+                auto part = [&](size_t b, size_t e) { for (size_t i = b; i < e; i++) rayBox(&pts[3 * i], &qb[6 * i]); };
+                if (nt <= 1) part(0, nq);
+                else { std::vector<std::thread> th; const size_t chunk = (nq + nt - 1) / nt; for (size_t k = 1; k < nt; k++) th.emplace_back(part, std::min(nq, k * chunk), std::min(nq, (k + 1) * chunk)); part(0, std::min(nq, chunk)); for (auto& x : th) x.join(); }
+            }
             times().rayBox += nowUs() - t0; const long long t1 = nowUs();
             gpu::Buf bV{}, bT{}, bQ{}, bQB{}, bNB{}, bL{}, bR{}, bI{}, bMQ{}, bMT{}, bO{}, bHuge{};
             bool submitted = false;   // once work has been submitted, a failure may leave it running on the device: then nothing is freed (leaked on purpose) and the engine is poisoned
