@@ -31,6 +31,9 @@
 #include <functional>
 #ifndef _WIN32
 #include <sys/resource.h>
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -983,7 +986,11 @@ int runContainsGpu(const string& dir, const string& which, size_t npts) {
         #ifdef _WIN32
         auto rss = [] { PROCESS_MEMORY_COUNTERS_EX pmc; GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof pmc); return (long)pmc.PrivateUsage; };   // CURRENT private bytes (the peak working set is noisy: driver warm-up)
 #else
-        auto rss = [] { struct rusage ru; getrusage(RUSAGE_SELF, &ru); return (long)ru.ru_maxrss; };   // bytes on macOS, KiB on Linux
+        #ifdef __APPLE__
+        auto rss = [] { mach_task_basic_info_data_t i; mach_msg_type_number_t n = MACH_TASK_BASIC_INFO_COUNT; task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&i, &n); return (long)i.resident_size; };   // CURRENT resident bytes (maxrss is a high-water mark and made this check noisy)
+#else
+        auto rss = [] { long pages = 0, res = 0; FILE* f = std::fopen("/proc/self/statm", "r"); if (f) { if (std::fscanf(f, "%ld %ld", &pages, &res) != 2) res = 0; std::fclose(f); } return res * (long)sysconf(_SC_PAGESIZE); };   // CURRENT resident bytes
+#endif
 #endif
         const long rss0 = rss();
         std::vector<std::thread> th;
