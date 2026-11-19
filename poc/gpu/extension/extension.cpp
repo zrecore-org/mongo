@@ -668,30 +668,46 @@ int containsGpu(MeshEntry& me, const std::vector<double>& pts, const Spec& spec,
     if (spec.plant == "gpuWrong") for (size_t i = 0; i < n; i += 64) if (dv[i] != 2) dv[i] ^= 1;   // planted: wrong definite verdicts where the shadow check looks
     const long long tr0 = gpupip::nowUs();
     const meshcontains::Bvh& bvh = me.cpuBvh();
-    std::vector<uint32_t> scratch;
     verdicts->assign(n, 'O');
-    long uncertain = 0;
-    for (size_t i = 0; i < n; i++) {
-        if ((i & 255) == 255 && cancel(cancelArg)) return 2;
+    // MP17: resolve and shadow check on up to 8 threads for large batches (per-point work, same verdicts; chunks are multiples of 64 so the shadow-checked points are the same set).
+    // `cancel` is a host callback: only the calling thread polls it; the others stop when it raises the flag.
+    std::atomic<long> uncertainTotal{0}; std::atomic<bool> canceled{false}; std::atomic<long> badAt{-1};
+    auto work = [&](size_t b, size_t e, bool poll) {
+        std::vector<uint32_t> scratch; long unc = 0;
+        for (size_t i = b; i < e; i++) {
+            if ((i & 255) == 255) { if (poll && cancel(cancelArg)) canceled = true; if (canceled.load()) return; }
 #if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 4
-        if (dv[i] == 2) { (*verdicts)[i] = 'O'; continue; }   // mutant: UNCERTAIN trusted as OUT
+            if (dv[i] == 2) { (*verdicts)[i] = 'O'; continue; }   // mutant: UNCERTAIN trusted as OUT
 #endif
-        if (dv[i] == 2) {   // the device is not sure: the exact CPU path decides
-            const auto v = meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch);
-            (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O'; uncertain++;
-        } else (*verdicts)[i] = dv[i] ? 'I' : 'O';
-    }
-    // shadow check: every 64th point with a definite device verdict is recomputed exactly; one mismatch disables the device path and the whole batch is redone on the CPU
+            if (dv[i] == 2) {   // the device is not sure: the exact CPU path decides
+                const auto v = meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch);
+                (*verdicts)[i] = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O'; unc++;
+            } else (*verdicts)[i] = dv[i] ? 'I' : 'O';
+        }
+        uncertainTotal += unc;
+        // shadow check: every 64th point with a definite device verdict is recomputed exactly; one mismatch disables the device path and the whole batch is redone on the CPU
 #if defined(MESHVOL_GPUMUT) && MESHVOL_GPUMUT == 1
-    for (size_t i = 0; i < 0; i += 64) {   // mutant: shadow check removed
+        for (size_t i = b; i < 0; i += 64) {   // mutant: shadow check removed
 #else
-    for (size_t i = 0; i < n; i += 64) {
+        for (size_t i = b; i < e; i += 64) {
 #endif
-        if (dv[i] == 2) continue;
-        const auto v = meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch);
-        const char want = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
-        if ((*verdicts)[i] != want) { g_gpuShadowMismatch++; return fallback("shadow check mismatch at point " + std::to_string(i)); }
+            if (dv[i] == 2) continue;
+            const auto v = meshcontains::classifyBvh(m.v, m.t, bvh, &pts[3 * i], &scratch);
+            const char want = v == meshcontains::kIn ? 'I' : v == meshcontains::kOn ? 'B' : 'O';
+            if ((*verdicts)[i] != want) { long cur = badAt.load(); while ((cur < 0 || (long)i < cur) && !badAt.compare_exchange_weak(cur, (long)i)) {} }
+        }
+    };
+    {
+        const unsigned hw = std::thread::hardware_concurrency(); const size_t nt = n < 65536 ? 1 : std::min<size_t>(hw ? hw : 1, 8);
+        const size_t chunk = ((n + nt - 1) / nt + 63) / 64 * 64;
+        std::vector<std::thread> th;
+        for (size_t k = 1; k < nt && k * chunk < n; k++) th.emplace_back(work, k * chunk, std::min(n, (k + 1) * chunk), false);
+        work(0, std::min(n, chunk), true);
+        for (auto& x : th) x.join();
     }
+    if (canceled.load()) return 2;
+    if (badAt.load() >= 0) { g_gpuShadowMismatch++; return fallback("shadow check mismatch at point " + std::to_string(badAt.load())); }
+    const long uncertain = uncertainTotal.load();
     g_tResolveShadow += gpupip::nowUs() - tr0;
     g_gpuBatches++; g_gpuPoints += (long)n; g_gpuUncertain += uncertain;
     return 1;
